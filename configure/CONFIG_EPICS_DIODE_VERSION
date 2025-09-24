@@ -1,0 +1,12 @@
+# Version numbers
+
+EPICS_DIODE_MAJOR_VERSION = 2
+EPICS_DIODE_MINOR_VERSION = 0
+EPICS_DIODE_MAINTENANCE_VERSION = 0
+
+# Development flag, set to zero for release versions
+
+EPICS_DIODE_DEVELOPMENT_FLAG = 0
+
+# Immediately after a release the MAINTENANCE_VERSION
+# will be incremented and the DEVELOPMENT_FLAG set to 1

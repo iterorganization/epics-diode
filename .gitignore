@@ -1,0 +1,28 @@
+# Install directories
+/bin/
+/cfg/
+/html/
+/include/
+/lib/
+/dbd/
+/db/
+
+# Local configuration files
+/configure/*.local
+/cfg/*
+
+# Build directories
+O.*/
+
+# Common files created by other tools
+/QtC-*
+/.vscode/
+*.orig
+*.log
+.*.swp
+.DS_Store
+
+# IOC generated
+cdCommands
+dllPath.bat
+envPaths

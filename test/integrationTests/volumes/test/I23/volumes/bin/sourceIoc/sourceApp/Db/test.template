@@ -1,0 +1,16 @@
+record(calc, "$(POZ):trigger")
+{
+    field(DESC, "Test trigger")
+    field(SCAN, "1 second")
+    field(CALC, "VAL >= 10 ? VAL : VAL + 1")
+    field(PINI, "NO")
+    field(DISA, "1")
+}
+
+record(calc, "$(POZ):v$(N)")
+{
+    field(DESC, "PV $(N)")
+    field(SCAN, "Passive")
+    field(CALC, "A")
+    field(INPA, "$(POZ):trigger.VAL CP")
+}

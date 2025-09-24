@@ -1,0 +1,146 @@
+record(waveform,"$(prefix):image")
+{
+    field(FTVL, "DOUBLE")
+    field(NELM, 1000000)
+}
+
+record(waveform,"$(prefix):one_element")
+{
+    field(FTVL, "DOUBLE")
+    field(NELM, 1)
+}
+
+record(ai,"$(prefix):stalled")
+{
+    field(PINI, "1")
+}
+
+record(mbbi,"$(prefix):enum")
+{
+    field(PINI, "1")
+    field(ZRST,"zero")
+    field(ONST,"one")
+    field(TWST,"two")
+    field(THST,"three")
+    field(FRST,"four")
+    field(FVST,"five")
+    field(SXST,"six")
+    field(SVST,"seven")
+    field(EIST,"eight")
+    field(NIST,"nine")
+    field(TEST,"ten")
+    field(ELST,"eleven")
+    field(TVST,"twelve")
+    field(TTST,"thirteen")
+    field(FTST,"fourteen")
+    field(FFST,"fifteen")
+    field(ZRVL,"0x0")
+    field(ONVL,"0x1")
+    field(TWVL,"0x2")
+    field(THVL,"0x3")
+    field(FRVL,"0x4")
+    field(FVVL,"0x5")
+    field(SXVL,"0x6")
+    field(SVVL,"0x7")
+    field(EIVL,"0x8")
+    field(NIVL,"0x9")
+    field(TEVL,"0xa")
+    field(ELVL,"0xb")
+    field(TVVL,"0xc")
+    field(TTVL,"0xd")
+    field(FTVL,"0xe")
+    field(FFVL,"0xf")
+    field(ZRSV,"NO_ALARM")
+    field(ONSV,"NO_ALARM")
+    field(TWSV,"NO_ALARM")
+    field(THSV,"NO_ALARM")
+    field(FRSV,"MINOR")
+    field(FVSV,"MINOR")
+    field(SXSV,"MINOR")
+    field(SVSV,"MINOR")
+    field(EISV,"MAJOR")
+    field(NISV,"MAJOR")
+    field(TESV,"MAJOR")
+    field(ELSV,"MAJOR")
+    field(TVSV,"NO_ALARM")
+    field(TTSV,"NO_ALARM")
+    field(FTSV,"NO_ALARM")
+    field(FFSV,"NO_ALARM")
+}
+
+record(lso,"$(prefix):lso")
+{
+    field(PINI, "1")
+    field(SIZV, "1000")
+}
+
+record(waveform,"$(prefix):wfs1")
+{
+    field(PINI, "1")
+    field(FTVL, "STRING")
+    field(NELM, "1")
+}
+
+record(waveform,"$(prefix):wfs10")
+{
+    field(PINI, "1")
+    field(FTVL, "STRING")
+    field(NELM, "10")
+}
+
+record(waveform,"$(prefix):wfe10")
+{
+    field(PINI, "1")
+    field(FTVL, "ENUM")
+    field(NELM, "10")
+}
+
+record(ai, "$(prefix):aiExample")
+{
+        field(DESC, "Analog input")
+        field(INP, "$(prefix):calcExample.VAL  NPP NMS")
+        field(EGUF, "10")
+        field(EGU, "Counts")
+        field(HOPR, "10")
+        field(LOPR, "0")
+        field(HIHI, "8")
+        field(HIGH, "6")
+        field(LOW, "4")
+        field(LOLO, "2")
+        field(HHSV, "MAJOR")
+        field(HSV, "MINOR")
+        field(LSV, "MINOR")
+        field(LLSV, "MAJOR")
+}
+record(calc, "$(prefix):calcExample")
+{
+        field(DESC, "Counter")
+        field(SCAN,"1 second")
+        field(FLNK, "$(prefix):aiExample")
+        field(CALC, "(A<B)?(A+C):D")
+        field(INPA, "$(prefix):calcExample.VAL  NPP NMS")
+        field(INPB, "9")
+        field(INPC, "1")
+        field(INPD, "0")
+        field(EGU, "Counts")
+        field(HOPR, "10")
+        field(HIHI, "8")
+        field(HIGH, "6")
+        field(LOW, "4")
+        field(LOLO, "2")
+        field(HHSV, "MAJOR")
+        field(HSV, "MINOR")
+        field(LSV, "MINOR")
+        field(LLSV, "MAJOR")
+}
+
+record(compress,"$(prefix):compressExample")
+{
+	field(DESC, "Circular buffer")
+	field(INP,"$(prefix):aiExample.VAL CP NMS")
+	field(ALG,"Circular Buffer")
+	field(NSAM,"10")
+	field(HOPR,"10")
+	field(EGU,"Counts")
+}
+

@@ -1,0 +1,11 @@
+{
+    // Minimum sender update period in seconds. (min = 0.025)
+    "min_update_period": 0.025,
+    // Heartbeat period in seconds. (min = 0.1)
+    "heartbeat_period": 15.0,
+    // Maximum sender sent rate in MB/s, 0 for no limit.
+    "rate_limit_mbs": 64,
+    // Array of channels to export (order matters!).
+    "channel_names": {
+    }
+}

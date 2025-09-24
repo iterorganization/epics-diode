@@ -1,0 +1,26 @@
+services:
+
+  poz:
+    hostname: poz
+    image: epics-diode-img
+    networks:
+      - epics-diode-net
+    volumes:
+      - ${DIODE_BIN_FOLDER}:/diode_bin
+      - ${TEST_VOLUMES_FOLDER}/config:/test_config
+      - ${TEST_VOLUMES_FOLDER}/bin:/test_bin
+
+  xpoz:
+    hostname: xpoz
+    image: epics-diode-img
+    networks:
+      - epics-diode-net
+    volumes:
+      - ${DIODE_BIN_FOLDER}:/diode_bin
+      - ${TEST_VOLUMES_FOLDER}/config:/test_config
+      - ${TEST_VOLUMES_FOLDER}/bin:/test_bin
+      - ${TEST_VOLUMES_FOLDER}/output:/test_output
+
+networks:
+  epics-diode-net:
+    driver: bridge

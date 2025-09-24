@@ -1,0 +1,6 @@
+file db/testDiodeAi.db {
+    pattern { prefix, no, scan }
+        { "poz", 1, "1 second" }
+        { "poz", 2, "2 second" }
+        { "poz", 3, "5 second" }
+}

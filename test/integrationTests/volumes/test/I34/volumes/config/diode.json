@@ -1,0 +1,18 @@
+{
+    // Minimum sender update period in seconds. (min = 0.025)
+    "min_update_period": 0.025,
+    // Polled fields update period in seconds. (min = 3.0)
+    "polled_fields_update_period": 3.0,
+    // Heartbeat period in seconds. (min = 0.1)
+    "heartbeat_period": 5000.0,
+    // Maximum sender sent rate in MB/s, 0 for no limit.
+    "rate_limit_mbs": 0,
+    // Array of channels to export (order matters!).
+    "channel_names": {
+        "poz:v1": { "polled_fields": ["DESC"] },
+        "poz:v2": { "polled_fields": ["DESC"] },
+        "poz:v3": { "polled_fields": ["DESC"] },
+        "poz:v4": { "polled_fields": ["DESC"] },
+        "poz:v5": { "polled_fields": ["DESC"] }
+    }
+}
