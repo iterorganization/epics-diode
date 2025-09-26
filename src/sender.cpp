@@ -40,7 +40,7 @@ struct Channel
     std::vector<uint8_t> value;
     bool value_hash_initialized = false;
     uint64_t value_hash = 0;
-    bool pending_update = false;
+    int pending_update = 0;
     int updates_since_last_hb = 0;
 
     std::deque<std::uint32_t> &update_deque;
@@ -69,7 +69,7 @@ struct Channel
     Channel(Channel&&) = default;
 
     Channel& operator=(const Channel&) = delete;
-    Channel& operator=(Channel&& other) = default;
+    Channel& operator=(Channel&& other) = delete;
 
 
     inline bool is_channel() const {
@@ -86,9 +86,11 @@ struct Channel
             return;
         }
         if (!pending_update) {
-            pending_update = true;
+            pending_update = 1;
             updates_since_last_hb++;
             update_deque.push_back(parent_index);  // Add channel (not field) to update queue 
+       } else if (pending_update < INT_MAX) {
+            pending_update++;
        }
     }
 
@@ -105,13 +107,15 @@ struct Channel
     }
 
     // Assumes 'channel' is on the front of the update_deque.
-    void clear_update() {
+    int clear_update() {
         if (is_field()) {
             parent_channel.clear_update();
-            return;
+            return 0;
         }
         update_deque.pop_front();
-        pending_update = false;
+        int updates = pending_update;
+        pending_update = 0;
+        return updates;
     }
 
 };
@@ -377,6 +381,8 @@ void Sender::Impl::send_fragmented_updates()
         send_fragmented_update(ch);
         ch->clear_update();
     }
+
+    // NOTE: fragmented updates do not report statistics (number of updates, overrides)
 }
 
 
@@ -398,6 +404,7 @@ void Sender::Impl::send_updates()
         bool process_fragmented = false;
 
         uint16_t update_count = 0;
+        unsigned override_count = 0;
         s << CADataMessage(seq_no++, update_count);
         auto update_count_pos = s.position() - sizeof(update_count);
 
@@ -420,7 +427,10 @@ void Sender::Impl::send_updates()
                     s.pad_align(SubmessageHeader::alignment, 0);
                     update_count++;
                 }
-                ch->clear_update();
+                int updates = ch->clear_update();
+                if (updates > 0) {
+                    override_count += unsigned(updates - 1);
+                }
             } else {
                 break;
             }
@@ -431,7 +441,7 @@ void Sender::Impl::send_updates()
         s.position(update_count_pos);
         s << update_count;
 
-        logger.log(LogLevel::Debug, "Sending %u update(s).", update_count);
+        logger.log(LogLevel::Debug, "Sending %u update(s), %u update overrides.", update_count, override_count);
 
         sender.send(s.data(), bytes_to_send);
 
@@ -603,7 +613,7 @@ void Sender::Impl::create_channel(
                                    &channel.channel_id);
     if (result != ECA_NORMAL) {
         logger.log(LogLevel::Error, "CA error %s occurred while trying "
-                    "to create channel '%s'.", ca_message(result), channel_name);
+                    "to create channel '%s'.", ca_message(result), channel_name.c_str());
         channel.status = result;
     }
 }
