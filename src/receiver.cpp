@@ -50,7 +50,7 @@ private:
     UDPReceiver initialize_receiver(int port, std::string listening_address, const Config& config);
     std::vector<Channel> create_channels(const Config& config);
 
-    bool validate_order(uint16_t seq_no);
+    bool validate_order(uint16_t seq_no, ssize_t bytes_received);
     bool validate_order(uint16_t seq_no, uint16_t fragment_seq_no);
     bool validate_sender(uint64_t startup_time);
     ssize_t receive_updates(const Callback& callback);
@@ -61,6 +61,11 @@ private:
     std::vector<Serializer::value_type> receive_buffer;
     std::vector<Serializer::value_type> fragment_buffer;
     Serializer fragment_serializer;
+    
+    // Buffer swapping for out-of-order packet handling
+    std::vector<Serializer::value_type> held_packet;
+    bool pending_swap = false;
+    ssize_t held_bytes = 0;
 
     UDPReceiver receiver;
 
@@ -79,6 +84,7 @@ Receiver::Impl::Impl(const Config& config, int port, std::string listening_addre
     heartbeat_period(config.heartbeat_period),
     receive_buffer(MAX_MESSAGE_SIZE),
     fragment_buffer(MAX_CA_DATA_SIZE),
+    held_packet(MAX_MESSAGE_SIZE),
     fragment_serializer(fragment_buffer.data(), 0),
     receiver(initialize_receiver(port, listening_address, config)),
     channels(create_channels(config))
@@ -175,8 +181,33 @@ std::vector<Receiver::Impl::Channel> Receiver::Impl::create_channels(const Confi
     return channels;
 }
 
-bool Receiver::Impl::validate_order(uint16_t seq_no) {
+bool Receiver::Impl::validate_order(uint16_t seq_no, ssize_t bytes_received) {
     uint16_t diff = seq_no - last_seq_no;
+
+    // Handle out-of-order packets (only adjacent packets supported, e.g. 1,2,4,3 -> 1,2,3,4)
+    if (last_seq_no != (uint16_t)-1) {
+        if (diff == 2 && held_bytes == 0) {
+            // This packet (N+1) is exactly one ahead - swap buffers to hold it
+            held_packet.swap(receive_buffer);
+            held_bytes = bytes_received;
+
+            logger.log(LogLevel::Debug, "Holding packet %u, expecting %u next.", seq_no, last_seq_no + 1);
+            return false;  // Don't process packet N+1 now
+        }
+        else if (diff == 1 && held_bytes > 0) {
+            // This is the missing packet N! Process it, then schedule held packet N+1
+            pending_swap = true;
+            last_seq_no = seq_no;
+            logger.log(LogLevel::Debug, "Received missing packet %u, will process held packet next.", seq_no);
+            return true;  // Process packet N now
+        }
+        else if (held_bytes > 0) {
+            // Sequence is broken while holding a packet - process held packet first
+            logger.log(LogLevel::Info, "Sequence broken at %u->%u while holding packet, processing held first.", last_seq_no, seq_no);
+            pending_swap = true;
+            return false;  // Don't process current packet yet
+        }
+    }
 
     if (diff != 1 && last_seq_no != (uint16_t)-1) {
         // a bit high logging level, but we want admins to be aware of this
@@ -186,18 +217,17 @@ bool Receiver::Impl::validate_order(uint16_t seq_no) {
     last_seq_no = seq_no;
 
     constexpr uint16_t tolerable_diff = std::numeric_limits<uint16_t>::max() / 2;
-    // not a duplicate (== 0), or tolerable difference (missing sequences)
-    // unsigned wraps are handled correctly
-    return (/*diff >= 0 && */ diff < tolerable_diff);
+    return (diff < tolerable_diff);
 }
 
 bool Receiver::Impl::validate_order(uint16_t seq_no, uint16_t fragment_seq_no) {
 
     // first fragment
     if (fragment_seq_no == 0) {
-        
+
         // check seq_no, remember fragment seq_no
-        if (!validate_order(seq_no)) {
+        // Note: fragments can't use buffer swapping, so pass 0 for bytes_received
+        if (!validate_order(seq_no, (ssize_t)0)) {
             return false;
         } else {
             active_fragment_seq_no = seq_no;
@@ -241,9 +271,25 @@ bool Receiver::Impl::validate_sender(uint64_t startup_time) {
 
 ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
     osiSockAddr fromAddress;
-    auto bytes_received = receiver.receive(receive_buffer.data(), receive_buffer.size(), &fromAddress);
-    if (bytes_received <= 0) {
-        return bytes_received;
+    ssize_t bytes_received;
+
+    // Check if we need to process a held packet first
+    if (pending_swap && held_bytes > 0) {
+        // Swap buffers back - held packet is now in receive_buffer
+        held_packet.swap(receive_buffer);
+        bytes_received = held_bytes;
+
+        // Clear held packet state
+        held_bytes = 0;
+        pending_swap = false;
+
+        logger.log(LogLevel::Debug, "Processing held packet.");
+    } else {
+        // Normal receive from socket
+        bytes_received = receiver.receive(receive_buffer.data(), receive_buffer.size(), &fromAddress);
+        if (bytes_received <= 0) {
+            return bytes_received;
+        }
     }
 
     Serializer s(receive_buffer.data(), (std::size_t)bytes_received);
@@ -295,7 +341,7 @@ ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
                 CADataMessage data_msg;
                 s >> data_msg;
 
-                if (validate_order(data_msg.seq_no)) {
+                if (validate_order(data_msg.seq_no, bytes_received)) {
                     for (uint16_t i = 0; i < data_msg.channel_count; i++) {
                         if (s.ensure(CAChannelData::size)) {
                             CAChannelData channel_data;
