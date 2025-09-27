@@ -109,20 +109,14 @@ bool PacketSequenceTracker::wait_for_packets(int count, int timeout_ms) {
     }
 }
 
-CallbackBridge::CallbackBridge(PacketSequenceTracker& tracker)
-    : tracker(tracker) {
+CallbackBridge::CallbackBridge(PacketSequenceTracker& tracker, epics_diode::Receiver& receiver)
+    : tracker(tracker), receiver(receiver) {
 }
 
 void CallbackBridge::operator()(uint32_t channel_id, uint16_t type, uint32_t count, void* value) {
-    // Since we can't get sequence number directly from callback,
-    // we need to infer it from the order of callbacks.
-    // This is a limitation - in a real implementation, we'd need to
-    // modify the receiver to provide sequence numbers.
-
-    // For now, just track that we received a packet
-    // The actual sequence number tracking will need to be done differently
-    last_seq_no++;
-    tracker.record_packet(last_seq_no);
+    // Get actual sequence number from receiver
+    uint16_t actual_seq_no = receiver.get_current_seq_no();
+    tracker.record_packet(actual_seq_no);
 }
 
 } // namespace test_utils

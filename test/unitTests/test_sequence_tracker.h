@@ -12,6 +12,8 @@
 #include <cstdint>
 #include <string>
 
+#include <epics-diode/receiver.h>
+
 namespace test_utils {
 
 struct TestResult {
@@ -66,14 +68,14 @@ private:
 // This is the bridge between the receiver callback and our tracker
 class CallbackBridge {
 public:
-    explicit CallbackBridge(PacketSequenceTracker& tracker);
+    explicit CallbackBridge(PacketSequenceTracker& tracker, epics_diode::Receiver& receiver);
 
     // The actual callback function
     void operator()(uint32_t channel_id, uint16_t type, uint32_t count, void* value);
 
 private:
     PacketSequenceTracker& tracker;
-    uint16_t last_seq_no = 0; // We need to infer sequence from callback order
+    epics_diode::Receiver& receiver;  // Reference to get actual sequence numbers
 };
 
 } // namespace test_utils

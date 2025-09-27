@@ -26,6 +26,9 @@ struct Receiver::Impl {
     Impl(const epics_diode::Config& config, int port, std::string listening_address);
     void run(double runtime, Callback callback);
 
+    // For testing: get sequence number of packet currently being processed
+    uint16_t get_current_seq_no() const { return current_processing_seq_no; }
+
 private:
     Logger logger;
 
@@ -73,6 +76,9 @@ private:
     uint16_t active_fragment_seq_no = (uint16_t)-1;
     uint16_t last_fragment_seq_no = (uint16_t)-1;
     uint64_t last_startup_time = 0;
+
+    // For testing: tracks sequence number of packet currently being processed
+    uint16_t current_processing_seq_no = 0;
 
     std::vector<Channel> channels;
 };
@@ -341,6 +347,9 @@ ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
                 CADataMessage data_msg;
                 s >> data_msg;
 
+                // Store current sequence for testing
+                current_processing_seq_no = data_msg.seq_no;
+
                 if (validate_order(data_msg.seq_no, bytes_received)) {
                     for (uint16_t i = 0; i < data_msg.channel_count; i++) {
                         if (s.ensure(CAChannelData::size)) {
@@ -381,6 +390,9 @@ ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
             if (s.ensure(CAFragDataMessage::size)) {
                 CAFragDataMessage data_msg;
                 s >> data_msg;
+
+                // Store current sequence for testing
+                current_processing_seq_no = data_msg.seq_no;
 
                 if (validate_order(data_msg.seq_no, data_msg.fragment_seq_no)) {
 
@@ -448,6 +460,10 @@ Receiver::~Receiver() = default;
 
 void Receiver::run(double runtime, Callback callback) {
     impl->run(runtime, std::move(callback));
+}
+
+uint16_t Receiver::get_current_seq_no() const {
+    return impl->get_current_seq_no();
 }
 
 }
