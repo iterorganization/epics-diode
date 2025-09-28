@@ -41,8 +41,7 @@ The ``Header`` is defined as follows:
 
     struct Header {
         uint8_t magic[4] = { 0x70u, 0x76u, 0x41u, 0x43u }; // 'pvAC' == pv 'anode-cathode' aka diode
-        uint8_t version = 1;          // current revision number
-        uint8_t reserved[3];          // not used
+        std::uint32_t global_seq_no;  // global packet sequence number for ordering
         std::uint64_t startup_time;   // time in milliseconds since the UNIX epoch, little-endian
         std::uint64_t config_hash;    // configuration hash, little-endian, 0 means check is disabled
     }
@@ -50,8 +49,9 @@ The ``Header`` is defined as follows:
 A message must start with a predefined 4-byte ``magic`` sequence identifying `EPICS Diode` protocol.
 If a message does not start with this sequence it is not a valid message and must be dropped.
 
-The ``version`` identifies the revision of the protocol used in the message. All revisions must be backward compatible;
-if they are not then different ``magic`` must be used.
+The ``global_seq_no`` is a 32-bit packet sequence number that increments for every UDP packet sent by a sender.
+This provides global ordering across all message types and enables robust handling of out-of-order packet delivery.
+The sequence number wraps around at 2^32 but this provides adequate coverage for practical deployment scenarios.
 
 The ``startup_time`` field holds the time when a sender was started.
 It is defined as the time in `milliseconds since the UNIX epoch (January 1, 1970 00:00:00 UTC) <https://currentmillis.com/>`_ and
@@ -69,7 +69,7 @@ The ``config_hash`` field holds a hash value of used configuration. The value mu
 Hash values of a sender and receiver can be compared to check whether the same configuration is being used.
 If this check is not needed a hash of value 0 can be used to disable it.
 
-Note that the ``Header`` is static for the entire lifecycle of a sender.
+Note that most ``Header`` fields are static for the entire lifecycle of a sender, with the exception of ``global_seq_no`` which increments with each packet sent.
 
 
 Submessage Header

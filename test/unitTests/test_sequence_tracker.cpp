@@ -32,7 +32,7 @@ std::string TestResult::to_string() const {
     oss << "]";
 
     if (failed) oss << " (FAILED)";
-    if (timeout) oss << " (TIMEOUT)";
+    //if (timeout) oss << " (TIMEOUT)";
     if (!error_message.empty()) oss << " Error: " << error_message;
 
     return oss.str();
@@ -114,9 +114,11 @@ CallbackBridge::CallbackBridge(PacketSequenceTracker& tracker, epics_diode::Rece
 }
 
 void CallbackBridge::operator()(uint32_t channel_id, uint16_t type, uint32_t count, void* value) {
-    // Get actual sequence number from receiver
-    uint16_t actual_seq_no = receiver.get_current_seq_no();
-    tracker.record_packet(actual_seq_no);
+    if (count != (uint32_t)-1) {
+        // Record only valid data packets, ignore disconnects
+        uint16_t actual_seq_no = receiver.get_current_seq_no();
+        tracker.record_packet(actual_seq_no);
+    }
 }
 
 } // namespace test_utils

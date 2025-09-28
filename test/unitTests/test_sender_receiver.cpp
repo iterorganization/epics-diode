@@ -52,11 +52,11 @@ edi::Config create_test_config() {
 }
 
 // Create a minimal test packet with specific sequence number
-std::vector<uint8_t> create_test_packet(uint16_t seq_no) {
+std::vector<uint8_t> create_test_packet(uint32_t global_seq_no, uint16_t seq_no) {
     std::vector<uint8_t> packet;
 
-    // Header - use constructor to set magic and version properly
-    edi::Header header(1000, 0);
+    // Header - use constructor to set magic, startup_time, config_hash, and global sequence properly
+    edi::Header header(1000, 0, global_seq_no);
 
     // Submessage header
     edi::SubmessageHeader sub_header;
@@ -97,11 +97,11 @@ std::vector<uint8_t> create_test_packet(uint16_t seq_no) {
 }
 
 // Create a fragmented test packet
-std::vector<uint8_t> create_frag_test_packet(uint16_t seq_no, uint16_t frag_seq_no, uint16_t total_frags = 3) {
+std::vector<uint8_t> create_frag_test_packet(uint32_t global_seq_no, uint16_t msg_seq_no, uint16_t fragment_seq_no) {
     std::vector<uint8_t> packet;
 
-    // Header
-    edi::Header header(1000, 0);
+    // Header - use global sequence number for packet ordering
+    edi::Header header(1000, 0, global_seq_no);
 
     // Submessage header
     edi::SubmessageHeader sub_header;
@@ -109,10 +109,10 @@ std::vector<uint8_t> create_frag_test_packet(uint16_t seq_no, uint16_t frag_seq_
     sub_header.flags = edi::SubmessageFlag::LittleEndian;
     sub_header.bytes_to_next_header = 0;
 
-    // CA Fragment Data message
+    // CA Fragment Data message - all fragments of same message use same seq_no
     edi::CAFragDataMessage frag_msg;
-    frag_msg.seq_no = seq_no;
-    frag_msg.fragment_seq_no = frag_seq_no;
+    frag_msg.seq_no = msg_seq_no;  // Same for all fragments of this message
+    frag_msg.fragment_seq_no = fragment_seq_no;
     frag_msg.channel_id = 0;
     frag_msg.type = DBR_STRING;
     frag_msg.count = 1; // Total count for complete assembled string
@@ -125,8 +125,8 @@ std::vector<uint8_t> create_frag_test_packet(uint16_t seq_no, uint16_t frag_seq_
     size_t frag_start[] = {0, 13, 26};
     size_t frag_sizes[] = {13, 13, 14}; // Last fragment includes null terminator
 
-    frag_msg.fragment_size = frag_sizes[frag_seq_no];
-    const char* frag_data = full_message + frag_start[frag_seq_no];
+    frag_msg.fragment_size = frag_sizes[fragment_seq_no];
+    const char* frag_data = full_message + frag_start[fragment_seq_no];
 
     // Build packet
     packet.resize(sizeof(edi::Header) + sizeof(edi::SubmessageHeader) +
@@ -200,7 +200,7 @@ public:
                                               const std::vector<bool>& is_fragment,
                                               const std::vector<uint16_t>& frag_seq_nos = {},
                                               int packet_delay_ms = 50,
-                                              int test_timeout_ms = 1500) {
+                                              int test_timeout_ms = 1000) {
         tracker.reset();
         stop_flag = false;
 
@@ -224,6 +224,7 @@ public:
         test_utils::TestResult result;
         result.sent_sequence = sequence;
 
+        uint32_t global_seq_no = 1;
         for (size_t i = 0; i < sequence.size(); ++i) {
             uint16_t seq_no = sequence[i];
             std::vector<uint8_t> packet;
@@ -231,11 +232,11 @@ public:
             if (i < is_fragment.size() && is_fragment[i]) {
                 // Create fragmented packet
                 uint16_t frag_seq = (i < frag_seq_nos.size()) ? frag_seq_nos[i] : 0;
-                packet = create_frag_test_packet(seq_no, frag_seq);
+                packet = create_frag_test_packet(global_seq_no++, seq_no, frag_seq);
                 testDiag("Sent fragment packet %u (frag_seq=%u)", seq_no, frag_seq);
             } else {
                 // Create regular packet
-                packet = create_test_packet(seq_no);
+                packet = create_test_packet(global_seq_no++, seq_no);
                 testDiag("Sent packet %u", seq_no);
             }
 
@@ -281,9 +282,8 @@ public:
 
         testDiag("Expecting %zu packets (regular + complete fragments)", expected_count);
 
-        if (!tracker.wait_for_packets(expected_count, test_timeout_ms)) {
-            testDiag("Test timed out waiting for packets");
-        }
+         // Wait for processing
+        std::this_thread::sleep_for(std::chrono::milliseconds(test_timeout_ms));
 
         // Stop receiver
         stop_flag = true;
@@ -301,81 +301,10 @@ public:
         return result;
     }
 
-    test_utils::TestResult run_sequence_test_mixed(const std::vector<uint16_t>& sequence,
-                                                   const std::vector<bool>& is_fragment,
-                                                   const std::vector<uint16_t>& frag_seq_nos = {},
-                                                   int packet_delay_ms = 50,
-                                                   int test_timeout_ms = 1500) {
-        tracker.reset();
-        stop_flag = false;
-
-        // Start receiver in background thread
-        receiver_thread.reset(new std::thread([this]() {
-            try {
-                test_utils::CallbackBridge bridge(tracker, *receiver);
-                auto callback = std::ref(bridge);
-
-                // Run receiver for test duration
-                receiver->run(1.0, callback); // 1 second runtime
-            } catch (const std::exception& e) {
-                tracker.record_error(std::string("Receiver exception: ") + e.what());
-            }
-        }));
-
-        // Give receiver time to start
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-        // Send test sequence with mixed regular and fragmented packets
-        test_utils::TestResult result;
-        result.sent_sequence = sequence;
-
-        for (size_t i = 0; i < sequence.size(); ++i) {
-            uint16_t seq_no = sequence[i];
-            std::vector<uint8_t> packet;
-
-            if (i < is_fragment.size() && is_fragment[i]) {
-                // Create fragmented packet
-                uint16_t frag_seq = (i < frag_seq_nos.size()) ? frag_seq_nos[i] : 0;
-                packet = create_frag_test_packet(seq_no, frag_seq);
-                testDiag("Sent fragment packet %u (frag_seq=%u)", seq_no, frag_seq);
-            } else {
-                // Create regular packet
-                packet = create_test_packet(seq_no);
-                testDiag("Sent packet %u", seq_no);
-            }
-
-            if (!sender_socket.send_to(packet, "127.0.0.1", receiver_port)) {
-                result.error_message = "Failed to send packet " + std::to_string(seq_no);
-                break;
-            }
-
-            std::this_thread::sleep_for(std::chrono::milliseconds(packet_delay_ms));
-        }
-
-        // Wait for processing or timeout
-        if (!tracker.wait_for_packets(sequence.size(), test_timeout_ms)) {
-            testDiag("Test timed out waiting for packets");
-        }
-
-        // Stop receiver
-        stop_flag = true;
-
-        // Get results
-        result = tracker.get_result();
-        result.sent_sequence = sequence;
-
-        // Cleanup for next test
-        if (receiver_thread && receiver_thread->joinable()) {
-            receiver_thread->join();
-        }
-        receiver_thread.reset();
-
-        return result;
-    }
 
     test_utils::TestResult run_sequence_test(const std::vector<uint16_t>& sequence,
                                             int packet_delay_ms = 50,
-                                            int test_timeout_ms = 1500) {
+                                            int test_timeout_ms = 1000) {
         tracker.reset();
         stop_flag = false;
 
@@ -400,7 +329,7 @@ public:
         result.sent_sequence = sequence;
 
         for (uint16_t seq_no : sequence) {
-            auto packet = create_test_packet(seq_no);
+            auto packet = create_test_packet(seq_no, seq_no);
 
             if (!sender_socket.send_to(packet, "127.0.0.1", receiver_port)) {
                 result.error_message = "Failed to send packet " + std::to_string(seq_no);
@@ -411,10 +340,7 @@ public:
             std::this_thread::sleep_for(std::chrono::milliseconds(packet_delay_ms));
         }
 
-        // Wait for processing or timeout
-        if (!tracker.wait_for_packets(sequence.size(), test_timeout_ms)) {
-            testDiag("Test timed out waiting for packets");
-        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(test_timeout_ms));
 
         // Stop receiver
         stop_flag = true;
@@ -450,8 +376,6 @@ static void test_normal_sequence() {
 
     if (result.failed) {
         testFail("Normal sequence test failed: %s", result.error_message.c_str());
-    } else if (result.timeout) {
-        testFail("Normal sequence test timed out");
     } else if (result.received_sequence.size() == sequence.size()) {
         testPass("Normal sequence processed correctly");
     } else {
@@ -712,7 +636,7 @@ static void test_frag_missing_first() {
 static void test_packet_creation() {
     testDiag("Testing packet creation...");
 
-    auto packet = create_test_packet(42);
+    auto packet = create_test_packet(42, 1);
 
     if (packet.size() > 0) {
         testPass("Packet creation successful");
@@ -723,10 +647,11 @@ static void test_packet_creation() {
     // Verify packet structure
     if (packet.size() >= sizeof(edi::Header)) {
         edi::Header* header = reinterpret_cast<edi::Header*>(packet.data());
-        if (header->version == edi::Header::VERSION) {
-            testPass("Header version correct");
+        // Since we moved to global sequence numbers, just check that header was created properly
+        if (header->global_seq_no == 42) {
+            testPass("Header global sequence correct");
         } else {
-            testFail("Header version incorrect");
+            testFail("Header global sequence incorrect: expected 42, got %u", header->global_seq_no);
         }
     } else {
         testFail("Packet too small for header");

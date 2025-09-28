@@ -18,8 +18,7 @@ namespace epics_diode {
 Serializer& operator<<(Serializer& buf, const Header& h) {
     if (buf.ensure(Header::size)) {
         buf << h.magic;
-        buf << h.version;
-        buf += sizeof(h.reserved);
+        buf << h.global_seq_no;
         buf << h.startup_time;
         buf << h.config_hash;
     }
@@ -29,8 +28,7 @@ Serializer& operator<<(Serializer& buf, const Header& h) {
 Serializer& operator>>(Serializer& buf, Header& h) {
     if (buf.ensure(Header::size)) {
         buf >> h.magic;
-        buf >> h.version;
-        buf += sizeof(h.reserved);
+        buf >> h.global_seq_no;
         buf >> h.startup_time;
         buf >> h.config_hash;
     }

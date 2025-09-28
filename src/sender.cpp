@@ -227,6 +227,7 @@ private:
     UDPSender sender;
 
     uint16_t seq_no = 0;
+    uint32_t global_seq_no = 0;
 
     std::deque<std::uint32_t> update_deque{};
     std::vector<Channel> channels;
@@ -333,7 +334,11 @@ void Sender::Impl::send_fragmented_update(Channel* ch)
     while (remaining_frag_size) {
 
         Serializer s(send_buffer);
-        s += Header::size; // skip preset header
+
+        // Update header with current global sequence number
+        s += sizeof(Header::magic);
+        s << ++global_seq_no;
+        s.position(s.data() + Header::size); // position after header
 
         // we must always fit headers in the buffer
         s.ensure(SubmessageHeader::size + CAFragDataMessage::size);
@@ -391,7 +396,11 @@ void Sender::Impl::send_updates()
     while (has_updates()) {
 
         Serializer s(send_buffer);
-        s += Header::size; // skip preset header
+
+        // Update header with current global sequence number
+        s += sizeof(Header::magic);
+        s << ++global_seq_no;
+        s.position(s.data() + Header::size); // position after header
     
         // we must always fit headers in the buffer
         s.ensure(SubmessageHeader::size + CADataMessage::size);
