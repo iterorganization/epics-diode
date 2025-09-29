@@ -12,7 +12,7 @@ namespace edi = epics_diode;
 
 const char* const TEST_EPICS_DIODE_CONFIG_FILENAME("../test_diode_config.json");
 
-const std::size_t REF_HASH = 8711506053972848298;
+const std::size_t REF_HASH = 14358125269606085529ULL;
 const double REF_MIN_UPDATE_PERIOD = 0.025;
 const double REF_POLLED_FIELDS_UPDATE_PERIOD = 6.0;
 const double REF_HEARTBEAT_PERIOD = 30.0;
@@ -83,7 +83,7 @@ MAIN(test_diode) {
         if (config.hash == REF_HASH) {
             testPass("Hash OK!");
         } else {
-            testFail("Hash FAILED!");
+            testFail("Hash FAILED (%zu != %zu)!", REF_HASH, config.hash);
         }
 
         if (config.min_update_period == REF_MIN_UPDATE_PERIOD) {

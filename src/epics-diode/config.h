@@ -31,6 +31,33 @@ struct ConfigChannel {
     }
 };
 
+namespace {
+
+uint64_t fnv1a_hash(const void* data, size_t size,
+                    uint64_t seed = 1469598103934665603ULL) {
+  const uint8_t* bytes = static_cast<const uint8_t*>(data);
+  uint64_t hash = seed;
+  for (size_t i = 0; i < size; ++i) {
+    hash ^= bytes[i];
+    hash *= 1099511628211ULL;
+  }
+  return hash;
+}
+
+inline uint64_t hash_combine(uint64_t h1, uint64_t h2) {
+  return h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2));
+}
+
+uint64_t hash_double(double v) { return fnv1a_hash(&v, sizeof(v)); }
+
+uint64_t hash_uint32(uint32_t v) { return fnv1a_hash(&v, sizeof(v)); }
+
+uint64_t hash_string(const std::string& s) {
+  return fnv1a_hash(s.data(), s.size());
+}
+
+}  // namespace
+
 struct Config {
     std::size_t hash = 0;                      // 0 indicates "do not check"
     double min_update_period = 0.1;            // 0.1s
@@ -41,17 +68,20 @@ struct Config {
 
     void update_hash()
     {
-        hash = std::hash<double>{}(min_update_period);
-        hash ^= std::hash<double>{}(polled_fields_update_period) << 1;
-        hash ^= std::hash<double>{}(heartbeat_period) << 1;
-        hash ^= std::hash<uint32_t>{}(rate_limit_mbs) << 1;
+        hash = 1469598103934665603ULL;  // FNV offset basis
+
+        hash = hash_combine(hash, hash_double(min_update_period));
+        hash = hash_combine(hash, hash_double(polled_fields_update_period));
+        hash = hash_combine(hash, hash_double(heartbeat_period));
+        hash = hash_combine(hash, hash_uint32(rate_limit_mbs));
+
         for (auto &channel : channels) {
-            hash ^= std::hash<std::string>{}(channel.channel_name) << 1;
+            hash = hash_combine(hash, hash_string(channel.channel_name));
             for (auto &field_name : channel.extra_fields) {
-                hash ^= std::hash<std::string>{}(field_name) << 1;
+                hash = hash_combine(hash, hash_string(field_name));
             }
             for (auto &field_name : channel.polled_fields) {
-                hash ^= std::hash<std::string>{}(field_name) << 1;
+                hash = hash_combine(hash, hash_string(field_name));
             }
         }
     }

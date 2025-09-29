@@ -32,7 +32,7 @@ namespace edi = epics_diode;
 namespace {
 
 char const* const EXECNAME("pvadiode_receiver");
-int const EPICS_SCAN_BASE = 10;  // parasoft-suppress HICPP-7_1_6-b HICPP-3_5_1-b "Usage of basic type intentional: Library use!"
+[[maybe_unused]] int const EPICS_SCAN_BASE = 10;  // parasoft-suppress HICPP-7_1_6-b HICPP-3_5_1-b "Usage of basic type intentional: Library use!"
 
 void usage()
 {

@@ -69,7 +69,7 @@ struct Channel
     Channel(Channel&&) = default;
 
     Channel& operator=(const Channel&) = delete;
-    Channel& operator=(Channel&& other) = default;
+    Channel& operator=(Channel&& other) = delete;
 
 
     inline bool is_channel() const {
@@ -603,7 +603,7 @@ void Sender::Impl::create_channel(
                                    &channel.channel_id);
     if (result != ECA_NORMAL) {
         logger.log(LogLevel::Error, "CA error %s occurred while trying "
-                    "to create channel '%s'.", ca_message(result), channel_name);
+                    "to create channel '%s'.", ca_message(result), channel_name.c_str());
         channel.status = result;
     }
 }
