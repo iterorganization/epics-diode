@@ -8,3 +8,4 @@ BASE_RECURSIVE=no
 MODULES=pvxs
 
 PVXS=1.14
+PVXS_REPOURL=https://github.com/epics-base/pvxs
