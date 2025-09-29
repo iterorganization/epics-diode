@@ -4,7 +4,7 @@ include $(TOP)/configure/CONFIG
 
 BIN = ../bin
 
-build: docker_image
+build: # TODO enable on envvar docker_image
 
 docker_image:
 	@if command -v docker >/dev/null 2>&1; then \
