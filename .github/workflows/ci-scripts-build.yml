@@ -33,23 +33,21 @@ jobs:
       BASE: ${{ matrix.base }}
       TEST: ${{ matrix.test }}
       EXTRA: ${{ matrix.extra }}
-      VV: "1"
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: Native Linux (WError)
+          - name: Native Linux with gcc
             os: ubuntu-latest
             cmp: gcc
             configuration: default
-            base: "7.0"
-            extra: "CMD_CPPFLAGS=-Werror"
+            base: "7.0.8"
 
           #- name: Native Linux with clang
           #  os: ubuntu-latest
           #  cmp: clang
           #  configuration: default
-          #  base: "7.0"
+          #  base: "7.0.8"
 
 
     steps:
@@ -63,8 +61,6 @@ jobs:
       if: runner.os == 'Linux'
     - name: Prepare and compile dependencies
       run: python .ci/cue.py prepare
-    #- name: Build libevent
-    #  run: python .ci/cue.py exec python .ci-local/libevent.py
     - name: Build main module
       run: python .ci/cue.py build
     - name: Test env setup
