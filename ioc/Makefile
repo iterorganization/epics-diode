@@ -28,6 +28,7 @@ diodeIoc_SRCS += diodeIoc.cpp
 diodeIoc_SRCS += devdiode.c
 diodeIoc_SRCS += iocInit.c
 
+diodeIoc_LIBS += epics-diode
 diodeIoc_LIBS += $(EPICS_BASE_IOC_LIBS)
 
 SHRLIB_VERSION ?= $(EPICS_DIODE_MAJOR_VERSION).$(EPICS_DIODE_MINOR_VERSION).$(EPICS_DIODE_MAINTENANCE_VERSION)

@@ -10,6 +10,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <type_traits>
 
@@ -29,7 +30,7 @@ namespace edi = epics_diode;
 namespace {
 
 char const* const EXECNAME("diode_dbgen");
-double const DEFAULT_TIMEOUT(5.0);  // parasoft-suppress HICPP-7_1_6-b HICPP-3_5_1-b "Intentional use of double!"
+[[maybe_unused]] double const DEFAULT_TIMEOUT(5.0);  // parasoft-suppress HICPP-7_1_6-b HICPP-3_5_1-b "Intentional use of double!"
 
 void usage()
 {

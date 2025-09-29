@@ -128,7 +128,7 @@ struct Channel
     Channel(Channel&&) = default;
 
     Channel& operator=(const Channel&) = delete;
-    Channel& operator=(Channel&& other) = default;
+    Channel& operator=(Channel&&) = delete;
 
     inline void mark_update(UpdateType kind) {
         if (pending_update == None) {

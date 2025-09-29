@@ -12,8 +12,6 @@ usually transported using a bidirectional TCP/IP-based protocol `EPICS Channel A
 This allows placing a unidirectional network communication device (aka diode) that enables the safe, one-way transfer of data between segmented networks.
 The diodes effectively eliminate external points of entry to the sending system, preventing intruders and contagious elements from infiltrating the network.
 
-Online Documentation - https://epics-controls.org/resources-and-support/documents/epics-diode/ (not yet deployed)
-
 ---
 
 [Building](documentation/building.rst)

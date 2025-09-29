@@ -9,7 +9,7 @@ DIRS += src
 src_DEPEND_DIRS = configure
 
 DIRS += ioc
-ioc_DEPENDS_DIRS = src
+ioc_DEPEND_DIRS = src
 
 DIRS += test
 test_DEPEND_DIRS = src ioc
