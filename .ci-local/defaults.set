@@ -7,5 +7,5 @@ BASE_RECURSIVE=no
 
 MODULES=pvxs
 
-PVXS=1.14
+PVXS=1.1.4
 PVXS_REPOURL=https://github.com/epics-base/pvxs
