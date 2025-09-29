@@ -4,7 +4,12 @@ include $(TOP)/configure/CONFIG
 
 BIN = ../bin
 
-build: # TODO enable on envvar docker_image
+build:
+	@if [ "$(EPICS_DIODE_INTEGRATION_TESTS)" = "ON" ]; then \
+		$(MAKE) docker_image; \
+	else \
+		echo "Integration tests disabled. Set EPICS_DIODE_INTEGRATION_TESTS=ON to enable."; \
+	fi
 
 docker_image:
 	@if command -v docker >/dev/null 2>&1; then \

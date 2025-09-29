@@ -10,13 +10,13 @@
 
 namespace edi = epics_diode;
 
-const char* const TEST_EPICS_DIODE_CONFIG_FILENAME("test_diode_config.json");
+const char* const TEST_EPICS_DIODE_CONFIG_FILENAME("../test_diode_config.json");
 
-const std::size_t REF_HASH = 7255884651207848723;
+const std::size_t REF_HASH = 8711506053972848298;
 const double REF_MIN_UPDATE_PERIOD = 0.025;
 const double REF_POLLED_FIELDS_UPDATE_PERIOD = 6.0;
 const double REF_HEARTBEAT_PERIOD = 30.0;
-const uint32_t REF_RATE_LIMIT =32;
+const uint32_t REF_RATE_LIMIT = 32;
 const std::size_t REF_NUMBER_OF_CHANNELS = 8;
 
 
@@ -76,8 +76,8 @@ MAIN(test_diode) {
         // Read configuration file.
         auto config = edi::get_configuration(config_filename);
 
-//        std::cout << config << std::endl;
-//        std::cout << "hash: " << config.hash << std::endl;
+        //std::cout << config << std::endl;
+        //std::cout << "hash: " << config.hash << std::endl;
 
         // Compare with expected reference values
         if (config.hash == REF_HASH) {

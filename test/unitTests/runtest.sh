@@ -5,7 +5,8 @@ MYDIR=`pwd`
 
 export LD_LIBRARY_PATH="$MYDIR/../../lib/$EPICS_HOST_ARCH"
 
-exec ./O.$EPICS_HOST_ARCH/test_diode
+cd 'O.$EPICS_HOST_ARCH'
+exec ./test_diode
 
 exit $?
 
