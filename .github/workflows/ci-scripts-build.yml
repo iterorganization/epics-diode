@@ -1,0 +1,88 @@
+# .github/workflows/ci-scripts-build.yml for use with EPICS Base ci-scripts
+# (see: https://github.com/epics-base/ci-scripts)
+
+# This is YAML - indentation levels are crucial
+
+name: epics-diode
+
+# Trigger on pushes and PRs to any branch
+on:
+  push:
+    paths-ignore:
+      - .appveyor.yml
+      - setup.py
+      - MANIFEST.in
+      - pyproject.toml
+      - python/*
+  pull_request:
+  workflow_dispatch:
+
+env:
+  SETUP_PATH: .ci-local
+  CMP: gcc
+
+jobs:
+  native:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    # Set environment variables from matrix parameters
+    env:
+      SET: ${{ matrix.set || 'defaults' }}
+      CMP: ${{ matrix.cmp }}
+      BCFG: ${{ matrix.configuration }}
+      BASE: ${{ matrix.base }}
+      TEST: ${{ matrix.test }}
+      EXTRA: ${{ matrix.extra }}
+      VV: "1"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Native Linux (WError)
+            os: ubuntu-latest
+            cmp: gcc
+            configuration: default
+            base: "7.0"
+            extra: "CMD_CPPFLAGS=-Werror"
+
+          #- name: Native Linux with clang
+          #  os: ubuntu-latest
+          #  cmp: clang
+          #  configuration: default
+          #  base: "7.0"
+
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: "apt-get install"
+      run: |
+        sudo apt-get update
+        sudo apt-get -y install libreadline-dev libevent-dev cmake
+      if: runner.os == 'Linux'
+    - name: Prepare and compile dependencies
+      run: python .ci/cue.py prepare
+    #- name: Build libevent
+    #  run: python .ci/cue.py exec python .ci-local/libevent.py
+    - name: Build main module
+      run: python .ci/cue.py build
+    - name: Test env setup
+      run: echo "UBSAN_OPTIONS=log_path=$PWD/UBSAN:suppressions=$PWD/.ci-local/ubsan.supp:report_error_type=1:print_stacktrace=1" >> $GITHUB_ENV
+    - name: Run main module tests
+      run: python .ci/cue.py -T 5M --add-path "{TOP}/bundle/usr/{EPICS_HOST_ARCH}/lib" test
+    - name: Collect and show test results
+      if: ${{ always() }}
+      run: python .ci/cue.py test-results
+    - name: Show UBSAN logs
+      shell: bash
+      if: ${{ always() }}
+      run: |
+        ret=0
+        for ff in `find . -name 'UBSAN*'`
+        do
+          echo "==== $ff ===="
+          cat "$ff"
+          ret=1
+        done
+        exit $ret
