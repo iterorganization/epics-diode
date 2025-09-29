@@ -281,6 +281,8 @@ ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
 
         if (global_seq_no <= last_global_seq_no) {
             // Packet is old/duplicate - drop it
+            logger.log(LogLevel::Debug, "Dropped old/duplicate packet: seq %u (expected > %u)",
+                      global_seq_no, last_global_seq_no);
             return bytes_received;
         }
 
@@ -293,6 +295,8 @@ ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
         }
 
         // Gap detected - accept the gap and process the packet
+        logger.log(LogLevel::Info, "Gap detected: lost %u packet(s) (%u-%u)",
+                  global_seq_no - expected, expected, global_seq_no - 1);
         process_packet_data(receive_buffer.data(), bytes_received, callback, fromAddress);
         last_global_seq_no = global_seq_no;
         return bytes_received;
@@ -311,10 +315,14 @@ ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
 
         if (global_seq_no <= last_global_seq_no) {
             // Packet is old/duplicate - drop it
+            logger.log(LogLevel::Debug, "Dropped old/duplicate packet: seq %u (expected > %u)",
+                      global_seq_no, last_global_seq_no);
             return bytes_received;
         }
 
         // Gap detected - process held packet, accept the gap and process the packet
+        logger.log(LogLevel::Info, "Gap detected: lost %u packet(s) (%u-%u)",
+                  global_seq_no - expected, expected, global_seq_no - 1);
         process_packet_data(held_packet.data(), held_bytes, callback, fromAddress);
         process_packet_data(receive_buffer.data(), bytes_received, callback, fromAddress);
         last_global_seq_no = global_seq_no;
@@ -337,7 +345,7 @@ ssize_t Receiver::Impl::process_packet_data(const uint8_t* packet_data, ssize_t 
     if (s.ensure(Header::size)) {
         Header header;
         s >> header;
-        logger.log(LogLevel::Debug, "Processing packet with sequence %u", header.global_seq_no);
+        //logger.log(LogLevel::Debug, "Processing packet with sequence %u", header.global_seq_no);
     }
 
     while (s.ensure(SubmessageHeader::size)) {

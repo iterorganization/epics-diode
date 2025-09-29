@@ -450,7 +450,11 @@ void Sender::Impl::send_updates()
         s.position(update_count_pos);
         s << update_count;
 
-        logger.log(LogLevel::Debug, "Sending %u update(s), %u update overrides.", update_count, override_count);
+        if (logger.is_loggable(LogLevel::Debug)) {
+            logger.log(LogLevel::Debug, "Sending %u update(s), %u update overrides.", update_count, override_count);
+        } else if (override_count > 0) {
+            logger.log(LogLevel::Config, "%u values overriden.", override_count);
+        }
 
         sender.send(s.data(), bytes_to_send);
 
