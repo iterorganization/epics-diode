@@ -687,6 +687,36 @@ static void test_frag_missing_first() {
     }
 }
 
+// Test duplicate of held packet is dropped
+static void test_duplicate_held_packet() {
+    testDiag("Testing duplicate held packet 1,2,4,4,3...");
+
+    SenderReceiverTestHarness harness;
+    if (!harness.setup()) {
+        testFail("Failed to setup test harness for duplicate held packet test");
+        return;
+    }
+
+    // Scenario: Receive N+1 before N, then receive duplicate of N+1
+    // Sequence: 1, 2, 4 (held), 4 (duplicate - should be dropped), 3 (completes sequence)
+    // Expected: [1, 2, 3, 4] - duplicate should NOT cause double processing
+    std::vector<uint16_t> sequence = {1, 2, 4, 4, 3};
+    std::vector<uint16_t> expected = {1, 2, 3, 4};
+
+    auto result = harness.run_sequence_test(sequence);
+
+    testDiag("Result: %s", result.to_string().c_str());
+
+    if (result.failed) {
+        testFail("Duplicate held packet test failed: %s", result.error_message.c_str());
+    } else if (result.sequences_match(expected)) {
+        testPass("Duplicate held packet correctly dropped");
+    } else {
+        testFail("Duplicate held packet: expected %s but got %s",
+                format_sequence(expected).c_str(), format_sequence(result.received_sequence).c_str());
+    }
+}
+
 // Test global sequence number wrap-around at 2^32
 static void test_global_seq_wraparound() {
     testDiag("Testing global sequence wrap-around: 0xFFFFFFFE, 0xFFFFFFFF, 1, 0, 2...");
@@ -746,7 +776,7 @@ static void test_packet_creation() {
 }
 
 MAIN(test_sender_receiver) {
-    testPlan(13);
+    testPlan(14);
 
     testDiag("=== Sender/Receiver Unit Tests ===");
     testDiag("Testing packet reordering and sequence validation");
@@ -785,7 +815,10 @@ MAIN(test_sender_receiver) {
         // Test 11: Missing first fragment
         test_frag_missing_first();
 
-        // Test 12: Global sequence wrap-around
+        // Test 12: Duplicate held packet
+        test_duplicate_held_packet();
+
+        // Test 13: Global sequence wrap-around
         test_global_seq_wraparound();
 
     } catch (std::exception& e) {

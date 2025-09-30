@@ -302,6 +302,11 @@ ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
         return bytes_received;
     }
 
+    // Drop duplicate of held packet
+    if (held_bytes > 0 && global_seq_no == held_seq_no) {
+        return bytes_received;
+    }
+
     // Gap detected - process held packet first if present, then current
     logger.log(LogLevel::Info, "Gap detected: lost %u packet(s) (%u-%u)",
               global_seq_no - expected, expected, global_seq_no - 1);
