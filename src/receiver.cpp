@@ -279,7 +279,11 @@ ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
             return bytes_received;
         }
 
-        if (global_seq_no <= last_global_seq_no) {
+        // Use signed arithmetic to handle wrap-around at 2^32
+        // When global_seq_no wraps from 0xFFFFFFFF to 0, simple comparison fails:
+        // (0 <= 0xFFFFFFFF) would incorrectly treat 0 as old
+        // Signed difference handles this: (int32_t)(0 - 0xFFFFFFFF) = 1 (positive, newer)
+        if ((int32_t)(global_seq_no - last_global_seq_no) <= 0) {
             // Packet is old/duplicate - drop it
             logger.log(LogLevel::Debug, "Dropped old/duplicate packet: seq %u (expected > %u)",
                       global_seq_no, last_global_seq_no);
@@ -313,7 +317,11 @@ ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
             return bytes_received;
         }
 
-        if (global_seq_no <= last_global_seq_no) {
+        // Use signed arithmetic to handle wrap-around at 2^32
+        // When global_seq_no wraps from 0xFFFFFFFF to 0, simple comparison fails:
+        // (0 <= 0xFFFFFFFF) would incorrectly treat 0 as old
+        // Signed difference handles this: (int32_t)(0 - 0xFFFFFFFF) = 1 (positive, newer)
+        if ((int32_t)(global_seq_no - last_global_seq_no) <= 0) {
             // Packet is old/duplicate - drop it
             logger.log(LogLevel::Debug, "Dropped old/duplicate packet: seq %u (expected > %u)",
                       global_seq_no, last_global_seq_no);
@@ -419,6 +427,7 @@ ssize_t Receiver::Impl::process_packet_data(const uint8_t* packet_data, ssize_t 
                         fragment_buffer.resize(total_value_size);
                         fragment_serializer = Serializer(fragment_buffer.data(), total_value_size);
 
+                        // TODO handle "data_msg.channel_id < channels.size()" case
                         logger.log(LogLevel::Debug, "Expecting to receive %zu total bytes of fragments for '%s'.",
                                     total_value_size, channels[data_msg.channel_id].name.c_str());
                     }

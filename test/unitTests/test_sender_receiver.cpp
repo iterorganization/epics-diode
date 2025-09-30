@@ -357,6 +357,61 @@ public:
 
         return result;
     }
+
+    test_utils::TestResult run_custom_global_seq_test(const std::vector<uint32_t>& global_seq_nos,
+                                                       const std::vector<uint16_t>& sequence,
+                                                       int packet_delay_ms = 50,
+                                                       int test_timeout_ms = 1000) {
+        tracker.reset();
+        stop_flag = false;
+
+        // Start receiver in background thread
+        receiver_thread.reset(new std::thread([this]() {
+            try {
+                test_utils::CallbackBridge bridge(tracker, *receiver);
+                auto callback = std::ref(bridge);
+                receiver->run(1.0, callback);
+            } catch (const std::exception& e) {
+                tracker.record_error(std::string("Receiver exception: ") + e.what());
+            }
+        }));
+
+        // Give receiver time to start
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        // Send test sequence with custom global sequence numbers
+        test_utils::TestResult result;
+        result.sent_sequence = sequence;
+
+        for (size_t i = 0; i < sequence.size(); ++i) {
+            auto packet = create_test_packet(global_seq_nos[i], sequence[i]);
+
+            if (!sender_socket.send_to(packet, "127.0.0.1", receiver_port)) {
+                result.error_message = "Failed to send packet " + std::to_string(i);
+                break;
+            }
+
+            testDiag("Sent packet with global_seq_no=0x%08X, msg_seq=%u", global_seq_nos[i], sequence[i]);
+            std::this_thread::sleep_for(std::chrono::milliseconds(packet_delay_ms));
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(test_timeout_ms));
+
+        // Stop receiver
+        stop_flag = true;
+
+        // Get results
+        result = tracker.get_result();
+        result.sent_sequence = sequence;
+
+        // Cleanup for next test
+        if (receiver_thread && receiver_thread->joinable()) {
+            receiver_thread->join();
+        }
+        receiver_thread.reset();
+
+        return result;
+    }
 };
 
 // Test normal sequence processing
@@ -632,6 +687,38 @@ static void test_frag_missing_first() {
     }
 }
 
+// Test global sequence number wrap-around at 2^32
+static void test_global_seq_wraparound() {
+    testDiag("Testing global sequence wrap-around: 0xFFFFFFFE, 0xFFFFFFFF, 1, 0, 2...");
+
+    SenderReceiverTestHarness harness;
+    if (!harness.setup()) {
+        testFail("Failed to setup test harness for wrap-around test");
+        return;
+    }
+
+    // Test that wrap-around comparison works correctly:
+    // Sequence: 0xFFFFFFFD -> 0xFFFFFFFE -> 0xFFFFFFFF -> 0 -> 1
+    // All in order, crossing the wrap point at 2^32
+    // The fix ensures (int32_t)(0 - 0xFFFFFFFF) = 1 > 0, so packet 0 is newer
+    std::vector<uint32_t> global_seq_nos = {0xFFFFFFFD, 0xFFFFFFFE, 0xFFFFFFFF, 0, 1};
+    std::vector<uint16_t> sequence = {1, 2, 3, 4, 5}; // Message sequence numbers
+    std::vector<uint16_t> expected = {1, 2, 3, 4, 5}; // All should be processed
+
+    auto result = harness.run_custom_global_seq_test(global_seq_nos, sequence);
+
+    testDiag("Result: %s", result.to_string().c_str());
+
+    if (result.failed) {
+        testFail("Wrap-around test failed: %s", result.error_message.c_str());
+    } else if (result.sequences_match(expected)) {
+        testPass("Global sequence wrap-around handled correctly");
+    } else {
+        testFail("Wrap-around: expected %s but got %s",
+                format_sequence(expected).c_str(), format_sequence(result.received_sequence).c_str());
+    }
+}
+
 // Test packet creation and basic structures
 static void test_packet_creation() {
     testDiag("Testing packet creation...");
@@ -659,7 +746,7 @@ static void test_packet_creation() {
 }
 
 MAIN(test_sender_receiver) {
-    testPlan(12);
+    testPlan(13);
 
     testDiag("=== Sender/Receiver Unit Tests ===");
     testDiag("Testing packet reordering and sequence validation");
@@ -697,6 +784,9 @@ MAIN(test_sender_receiver) {
 
         // Test 11: Missing first fragment
         test_frag_missing_first();
+
+        // Test 12: Global sequence wrap-around
+        test_global_seq_wraparound();
 
     } catch (std::exception& e) {
         testFail("Exception: %s", e.what());
