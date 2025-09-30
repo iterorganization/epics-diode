@@ -56,6 +56,7 @@ private:
     bool validate_fragment_sequence(uint16_t seq_no, uint16_t fragment_seq_no);
     bool validate_sender(uint64_t startup_time);
     ssize_t receive_updates(const Callback& callback);
+    bool process_packet(std::vector<Serializer::value_type>& packet_buffer, ssize_t size, const Callback& callback, const osiSockAddr& fromAddress);
     ssize_t process_packet_data(const uint8_t* packet_data, ssize_t bytes_received, const Callback& callback, const osiSockAddr& fromAddress);
     void check_no_updates(Callback callback);
 
@@ -231,32 +232,39 @@ bool Receiver::Impl::validate_sender(uint64_t startup_time) {
 ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
     osiSockAddr fromAddress;
 
-    // Always receive a new packet from socket first
+    // Read packet from socket
     ssize_t bytes_received = receiver.receive(receive_buffer.data(), receive_buffer.size(), &fromAddress);
     if (bytes_received <= 0) {
         return bytes_received;
     }
 
-    Serializer s(receive_buffer.data(), (std::size_t)bytes_received);
+    // Process the received packet
+    process_packet(receive_buffer, bytes_received, callback, fromAddress);
+
+    return bytes_received;
+}
+
+bool Receiver::Impl::process_packet(std::vector<Serializer::value_type>& packet_buffer, ssize_t size, const Callback& callback, const osiSockAddr& fromAddress) {
+    Serializer s(packet_buffer.data(), (std::size_t)size);
     Header header;
     s >> header;
 
     if (!header.validate()) {
         logger.log(LogLevel::Warning, "Invalid header received from '%s'.",
                    to_string(fromAddress).c_str());
-        return bytes_received;
+        return false;
     }
 
     if (header.config_hash != config_hash) {
         logger.log(LogLevel::Warning, "Configuration mismatch to sender at '%s'.",
                    to_string(fromAddress).c_str());
-        return bytes_received;
+        return false;
     }
 
     if (!validate_sender(header.startup_time)) {
         logger.log(LogLevel::Warning, "Multiple senders detected, rejecting older sender at '%s'.",
                    to_string(fromAddress).c_str());
-        return bytes_received;
+        return false;
     }
 
     uint32_t global_seq_no = header.global_seq_no;
@@ -264,7 +272,8 @@ ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
     // First packet - initialize and process
     if (last_global_seq_no == (uint32_t)-1) {
         last_global_seq_no = global_seq_no;
-        return process_packet_data(receive_buffer.data(), bytes_received, callback, fromAddress);
+        process_packet_data(packet_buffer.data(), size, callback, fromAddress);
+        return true;
     }
 
     uint32_t expected = last_global_seq_no + 1;
@@ -277,12 +286,12 @@ ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
         // Packet is old/duplicate - drop it
         logger.log(LogLevel::Debug, "Dropped old/duplicate packet: seq %u (expected > %u)",
                   global_seq_no, last_global_seq_no);
-        return bytes_received;
+        return false;
     }
 
     // In-order packet arrival
     if (global_seq_no == expected) {
-        process_packet_data(receive_buffer.data(), bytes_received, callback, fromAddress);
+        process_packet_data(packet_buffer.data(), size, callback, fromAddress);
         if (held_bytes > 0) {
             // Process the held packet after the expected one
             process_packet_data(held_packet.data(), held_bytes, callback, fromAddress);
@@ -291,20 +300,22 @@ ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
         } else {
             last_global_seq_no = global_seq_no;
         }
-        return bytes_received;
+        return true;
     }
 
     // Out-of-order packet: exactly one ahead and not holding - hold it
     if (global_seq_no == expected + 1 && held_bytes == 0) {
-        held_packet.swap(receive_buffer);
-        held_bytes = bytes_received;
+        // Swap buffers to avoid copy
+        held_packet.swap(packet_buffer);
+        held_bytes = size;
         held_seq_no = global_seq_no;
-        return bytes_received;
+        return false; // Held, not processed yet
     }
 
     // Drop duplicate of held packet
     if (held_bytes > 0 && global_seq_no == held_seq_no) {
-        return bytes_received;
+        logger.log(LogLevel::Debug, "Dropped duplicate of held packet: seq %u", global_seq_no);
+        return false;
     }
 
     // Gap detected - process held packet first if present, then current
@@ -314,9 +325,9 @@ ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
         process_packet_data(held_packet.data(), held_bytes, callback, fromAddress);
         held_bytes = 0;
     }
-    process_packet_data(receive_buffer.data(), bytes_received, callback, fromAddress);
+    process_packet_data(packet_buffer.data(), size, callback, fromAddress);
     last_global_seq_no = global_seq_no;
-    return bytes_received;
+    return true;
 }
 
 ssize_t Receiver::Impl::process_packet_data(const uint8_t* packet_data, ssize_t bytes_received, const Callback& callback, const osiSockAddr& fromAddress) {
