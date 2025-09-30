@@ -57,7 +57,7 @@ private:
     bool validate_sender(uint64_t startup_time);
     ssize_t receive_updates(const Callback& callback);
     bool process_packet(std::vector<Serializer::value_type>& packet_buffer, ssize_t size, const Callback& callback, const osiSockAddr& fromAddress);
-    ssize_t process_packet_data(const uint8_t* packet_data, ssize_t bytes_received, const Callback& callback, const osiSockAddr& fromAddress);
+    bool process_packet_data(uint8_t* packet_data, ssize_t size, const Callback& callback, const osiSockAddr& fromAddress);
     void check_no_updates(Callback callback);
 
     std::size_t config_hash;
@@ -330,9 +330,9 @@ bool Receiver::Impl::process_packet(std::vector<Serializer::value_type>& packet_
     return true;
 }
 
-ssize_t Receiver::Impl::process_packet_data(const uint8_t* packet_data, ssize_t bytes_received, const Callback& callback, const osiSockAddr& fromAddress) {
+bool Receiver::Impl::process_packet_data(uint8_t* packet_data, ssize_t size, const Callback& callback, const osiSockAddr& fromAddress) {
 
-    Serializer s(const_cast<uint8_t*>(packet_data), (std::size_t)bytes_received);
+    Serializer s(packet_data, std::size_t(size));
 
 #if 0
     if (logger.is_loggable(LogLevel::Trace)) {
@@ -355,7 +355,7 @@ ssize_t Receiver::Impl::process_packet_data(const uint8_t* packet_data, ssize_t 
         if ((subheader.flags & SubmessageFlag::LittleEndian) == 0) {
             logger.log(LogLevel::Warning, "Only little endian ordering supported, dropping entire packet from '%s'.",
                         to_string(fromAddress).c_str());
-            return bytes_received;
+            return false;
         }
 
         auto payload_pos = s.position();
@@ -471,7 +471,7 @@ ssize_t Receiver::Impl::process_packet_data(const uint8_t* packet_data, ssize_t 
         }
     }
 
-    return bytes_received;
+    return true;
 }
 
 

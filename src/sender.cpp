@@ -131,12 +131,13 @@ struct ChannelGroup
     }
 
     inline uint32_t end_channel_group_id(const Channel& channel) const {
-        for (auto i = channel.index; i < channels.size()-1; i++) {
-            if (channels[i].parent_index < channels[i+1].parent_index) {
+        // channel must be a member of the channels vector, therefore size is at least 1
+        for (auto i = channel.index; i < channels.size() - 1; i++) {
+            if (channels[i].parent_index < channels[i + 1].parent_index) {
                 return i;
             }
         }
-        return channels.size() - 1;
+        return uint32_t(channels.size() - 1);
     }
 
     ChannelGroup(const Channel& channel, const std::vector<Channel>& channels) :
@@ -148,7 +149,7 @@ struct ChannelGroup
 
     inline uint32_t value_size() const {
         uint32_t sum = 0;
-        for (auto i = start_index; i < end_index+1; i++) {
+        for (auto i = start_index; i < end_index + 1; i++) {
             sum += channels[i].value.size();
         }
         return sum;
@@ -156,7 +157,7 @@ struct ChannelGroup
 
     inline uint32_t value_size_aligned(std::size_t alignment) const {
         uint32_t full_aligned_size = 0;
-        for (auto i = start_index; i < end_index+1; i++) {
+        for (auto i = start_index; i < end_index + 1; i++) {
             full_aligned_size += (CAChannelData::size + channels[i].value.size());
             auto n = full_aligned_size % alignment;
             if (n > 0) {
@@ -483,8 +484,13 @@ void Sender::Impl::mark_heartbeat_updates()
 
     }
 
-    std::size_t percent_connected = (100 * n_connected / channels.size());
-    std::size_t percent_stalled = (100 * n_marked / channels.size());
+    std::size_t percent_connected = 0;
+    std::size_t percent_stalled = 0;
+    if (channels.size() > 0) {
+        percent_connected = (100 * n_connected / channels.size());
+        percent_stalled = (100 * n_marked / channels.size());
+    }
+
     logger.log(LogLevel::Config, "%zu of %zu (%u%%) connected, %zu (%u%%) without updates in the last heartbeat period.", 
         n_connected, channels.size(), percent_connected,
         n_marked, percent_stalled);
