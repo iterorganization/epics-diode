@@ -141,8 +141,7 @@ This ``Submessage`` carries a set of `EPICS CA` channel updates.
     }
 
 The ``seq_no`` field is an incrementing counter increased for each ``CADataMessage`` or ``CAFragDataMessage`` for the entire set of fragments (described in the following section).
-This allows the detection of out-of-order or duplicate deliveries (which can happen when using UDP). Such submessages must be ignored. 
-On overflow ``seq_no`` must restart with 0. This must be properly handled by the implementation, and not misinterpreted as out-of-order delivery.
+On overflow ``seq_no`` must restart with 0.
 
 The ``channel_updates`` field specifies the number of ``CAChannelData`` structures to follow (each for each channel update) and the structure is defined as:
 
@@ -224,8 +223,7 @@ This ``Submessage`` carries a set of `PVA` channel updates.
     }
 
 The ``seq_no`` field is an incrementing counter increased for each ``PVADataMessage`` or ``PVAFragDataMessage`` for the entire set of fragments (described in the following section).
-This allows the detection of out-of-order or duplicate deliveries (which can happen when using UDP). Such submessages must be ignored. 
-On overflow ``seq_no`` must restart with 0. This must be properly handled by the implementation, and not misinterpreted as out-of-order delivery.
+On overflow ``seq_no`` must restart with 0.
 
 The ``channel_updates`` field specifies the number of ``PVAChannelData`` structures to follow (each for each channel update) and the structure is defined as:
 
