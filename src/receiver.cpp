@@ -269,74 +269,49 @@ ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
 
     uint32_t expected = last_global_seq_no + 1;
 
-    // Normal packet processing
-    if (held_bytes == 0) {
-
-        if (global_seq_no == expected) {
-            // This is the next expected packet - process it
-            process_packet_data(receive_buffer.data(), bytes_received, callback, fromAddress);
-            last_global_seq_no = global_seq_no;
-            return bytes_received;
-        }
-
-        // Use signed arithmetic to handle wrap-around at 2^32
-        // When global_seq_no wraps from 0xFFFFFFFF to 0, simple comparison fails:
-        // (0 <= 0xFFFFFFFF) would incorrectly treat 0 as old
-        // Signed difference handles this: (int32_t)(0 - 0xFFFFFFFF) = 1 (positive, newer)
-        if ((int32_t)(global_seq_no - last_global_seq_no) <= 0) {
-            // Packet is old/duplicate - drop it
-            logger.log(LogLevel::Debug, "Dropped old/duplicate packet: seq %u (expected > %u)",
-                      global_seq_no, last_global_seq_no);
-            return bytes_received;
-        }
-
-        if (global_seq_no == expected + 1) {
-            // Packet is exactly one ahead and we're not holding anything - hold it
-            held_packet.swap(receive_buffer);
-            held_bytes = bytes_received;
-            held_seq_no = global_seq_no;
-            return bytes_received; // Don't process now, just acknowledge receipt
-        }
-
-        // Gap detected - accept the gap and process the packet
-        logger.log(LogLevel::Info, "Gap detected: lost %u packet(s) (%u-%u)",
-                  global_seq_no - expected, expected, global_seq_no - 1);
-        process_packet_data(receive_buffer.data(), bytes_received, callback, fromAddress);
-        last_global_seq_no = global_seq_no;
+    // Use signed arithmetic to handle wrap-around at 2^32
+    // When global_seq_no wraps from 0xFFFFFFFF to 0, simple comparison fails:
+    // (0 <= 0xFFFFFFFF) would incorrectly treat 0 as old
+    // Signed difference handles this: (int32_t)(0 - 0xFFFFFFFF) = 1 (positive, newer)
+    if ((int32_t)(global_seq_no - last_global_seq_no) <= 0) {
+        // Packet is old/duplicate - drop it
+        logger.log(LogLevel::Debug, "Dropped old/duplicate packet: seq %u (expected > %u)",
+                  global_seq_no, last_global_seq_no);
         return bytes_received;
+    }
 
-    } else {
-        // Holding a packet already
-
-        if (global_seq_no == expected) {
-            // This is the next expected packet - process it
-            process_packet_data(receive_buffer.data(), bytes_received, callback, fromAddress);
+    // In-order packet arrival
+    if (global_seq_no == expected) {
+        process_packet_data(receive_buffer.data(), bytes_received, callback, fromAddress);
+        if (held_bytes > 0) {
+            // Process the held packet after the expected one
             process_packet_data(held_packet.data(), held_bytes, callback, fromAddress);
             last_global_seq_no = held_seq_no;
             held_bytes = 0;
-            return bytes_received;
+        } else {
+            last_global_seq_no = global_seq_no;
         }
-
-        // Use signed arithmetic to handle wrap-around at 2^32
-        // When global_seq_no wraps from 0xFFFFFFFF to 0, simple comparison fails:
-        // (0 <= 0xFFFFFFFF) would incorrectly treat 0 as old
-        // Signed difference handles this: (int32_t)(0 - 0xFFFFFFFF) = 1 (positive, newer)
-        if ((int32_t)(global_seq_no - last_global_seq_no) <= 0) {
-            // Packet is old/duplicate - drop it
-            logger.log(LogLevel::Debug, "Dropped old/duplicate packet: seq %u (expected > %u)",
-                      global_seq_no, last_global_seq_no);
-            return bytes_received;
-        }
-
-        // Gap detected - process held packet, accept the gap and process the packet
-        logger.log(LogLevel::Info, "Gap detected: lost %u packet(s) (%u-%u)",
-                  global_seq_no - expected, expected, global_seq_no - 1);
-        process_packet_data(held_packet.data(), held_bytes, callback, fromAddress);
-        process_packet_data(receive_buffer.data(), bytes_received, callback, fromAddress);
-        last_global_seq_no = global_seq_no;
-        held_bytes = 0;  // Clear held packet after processing
         return bytes_received;
     }
+
+    // Out-of-order packet: exactly one ahead and not holding - hold it
+    if (global_seq_no == expected + 1 && held_bytes == 0) {
+        held_packet.swap(receive_buffer);
+        held_bytes = bytes_received;
+        held_seq_no = global_seq_no;
+        return bytes_received;
+    }
+
+    // Gap detected - process held packet first if present, then current
+    logger.log(LogLevel::Info, "Gap detected: lost %u packet(s) (%u-%u)",
+              global_seq_no - expected, expected, global_seq_no - 1);
+    if (held_bytes > 0) {
+        process_packet_data(held_packet.data(), held_bytes, callback, fromAddress);
+        held_bytes = 0;
+    }
+    process_packet_data(receive_buffer.data(), bytes_received, callback, fromAddress);
+    last_global_seq_no = global_seq_no;
+    return bytes_received;
 }
 
 ssize_t Receiver::Impl::process_packet_data(const uint8_t* packet_data, ssize_t bytes_received, const Callback& callback, const osiSockAddr& fromAddress) {
