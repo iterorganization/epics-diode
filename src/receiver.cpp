@@ -421,37 +421,43 @@ ssize_t Receiver::Impl::process_packet_data(const uint8_t* packet_data, ssize_t 
                 // Global packet ordering is handled at header level, but we still need fragment sequence validation
                 if (validate_fragment_sequence(data_msg.seq_no, data_msg.fragment_seq_no)) {
 
-                    // first fragment, initialize fragment buffer
-                    if (data_msg.fragment_seq_no == 0) {
-                        auto total_value_size = (std::size_t)dbr_size_n(data_msg.type, data_msg.count);  // parasoft-suppress HICPP-1_2_1-i "Avoid conditions that always evaluate to the same value" - dbr_size_n internal check
-                        fragment_buffer.resize(total_value_size);
-                        fragment_serializer = Serializer(fragment_buffer.data(), total_value_size);
+                    // validate channel_id before using it
+                    if (data_msg.channel_id < channels.size()) {
 
-                        // TODO handle "data_msg.channel_id < channels.size()" case
-                        logger.log(LogLevel::Debug, "Expecting to receive %zu total bytes of fragments for '%s'.",
-                                    total_value_size, channels[data_msg.channel_id].name.c_str());
-                    }
+                        // first fragment, initialize fragment buffer
+                        if (data_msg.fragment_seq_no == 0) {
+                            auto total_value_size = (std::size_t)dbr_size_n(data_msg.type, data_msg.count);  // parasoft-suppress HICPP-1_2_1-i "Avoid conditions that always evaluate to the same value" - dbr_size_n internal check
+                            fragment_buffer.resize(total_value_size);
+                            fragment_serializer = Serializer(fragment_buffer.data(), total_value_size);
 
-                    // copy fragment data
-                    if (fragment_serializer.remaining() >= data_msg.fragment_size) {
-                        fragment_serializer.write(s.position(), data_msg.fragment_size);
-
-                        logger.log(LogLevel::Trace, "Received fragment %u (%zu bytes remaining).",
-                                    data_msg.fragment_seq_no, fragment_serializer.remaining());
-
-                        // last fragment received
-                        if (fragment_serializer.remaining() == 0) {
-                            // guarded callback call
-                            try {
-                                current_processing_seq_no = data_msg.seq_no;
-                                callback(data_msg.channel_id, data_msg.type, data_msg.count, fragment_buffer.data());
-                            } catch (std::exception& ex) {
-                                logger.log(LogLevel::Error, "Exception escaped out of callback: %s", ex.what());
-                            }
+                            logger.log(LogLevel::Debug, "Expecting to receive %zu total bytes of fragments for '%s'.",
+                                        total_value_size, channels[data_msg.channel_id].name.c_str());
                         }
 
-                    } else {
-                        logger.log(LogLevel::Debug, "Total fragment size out of bounds.");
+                        // copy fragment data
+                        if (fragment_serializer.remaining() >= data_msg.fragment_size) {
+                            fragment_serializer.write(s.position(), data_msg.fragment_size);
+
+                            logger.log(LogLevel::Trace, "Received fragment %u (%zu bytes remaining).",
+                                        data_msg.fragment_seq_no, fragment_serializer.remaining());
+
+                            // last fragment received
+                            if (fragment_serializer.remaining() == 0) {
+                                // update channel metadata
+                                channels[data_msg.channel_id].last_update_time = current_update_time;
+
+                                // guarded callback call
+                                try {
+                                    current_processing_seq_no = data_msg.seq_no;
+                                    callback(data_msg.channel_id, data_msg.type, data_msg.count, fragment_buffer.data());
+                                } catch (std::exception& ex) {
+                                    logger.log(LogLevel::Error, "Exception escaped out of callback: %s", ex.what());
+                                }
+                            }
+
+                        } else {
+                            logger.log(LogLevel::Debug, "Total fragment size out of bounds.");
+                        }
                     }
 
                     // not needed, will be handled below
