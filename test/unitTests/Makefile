@@ -10,6 +10,7 @@ TESTS += test_diode
 TESTPROD += test_sender_receiver
 test_sender_receiver_SRCS += test_sender_receiver.cpp test_socket_utils.cpp test_sequence_tracker.cpp
 test_sender_receiver_LIBS = Com epics-diode
+test_sender_receiver_SYS_LIBS_Linux += pthread
 TESTS += test_sender_receiver
 
 

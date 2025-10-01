@@ -62,9 +62,13 @@ static void event_callback(struct event_handler_args args) {
 
     double expected = last_val[idx] + 1.0;
     if (val->value != expected) {
-        missed += (int)(val->value - expected);
-        //printf("MISSING update on %s: got %.0f, expected %.0f (delta=%.0f)\n",
-        //       ca_name(args.chid), val->value, expected, val->value - last_val[idx]);
+        int diff = (int)(val->value - expected);
+        if (diff <= 0) {
+            printf("%s WARNING: Out-of-order update on %s: got %.0f, expected %.0f (diff=%d)\n",
+                   get_timestamp(), ca_name(args.chid), val->value, expected, diff);
+        } else {
+            missed += diff;
+        }
     }
 
     last_val[idx] = val->value;
