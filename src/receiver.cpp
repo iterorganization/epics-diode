@@ -222,6 +222,9 @@ bool Receiver::Impl::validate_sender(uint64_t startup_time) {
         last_startup_time = startup_time;
         // reset global seq_no
         last_global_seq_no = (uint32_t)-1;
+        // clear held packet from old sender
+        held_bytes = 0;
+        held_seq_no = 0;
         return true;
     } else {
         // reject older senders
