@@ -105,7 +105,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    SEVCHK(ca_context_create(ca_enable_preemptive_callback), "ca_context_create");
+    SEVCHK(ca_context_create(ca_disable_preemptive_callback), "ca_context_create");
 
     printf("%s Subscribing to %s[1-%d] PVs...\n", get_timestamp(), prefix, n_channels);
 
