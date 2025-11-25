@@ -40,7 +40,7 @@ struct Channel
     std::vector<uint8_t> value;
     bool value_hash_initialized = false;
     uint64_t value_hash = 0;
-    bool pending_update = false;
+    int pending_update = 0;
     int updates_since_last_hb = 0;
 
     std::deque<std::uint32_t> &update_deque;
@@ -86,9 +86,11 @@ struct Channel
             return;
         }
         if (!pending_update) {
-            pending_update = true;
+            pending_update = 1;
             updates_since_last_hb++;
             update_deque.push_back(parent_index);  // Add channel (not field) to update queue 
+       } else if (pending_update < INT_MAX) {
+            pending_update++;
        }
     }
 
@@ -105,13 +107,15 @@ struct Channel
     }
 
     // Assumes 'channel' is on the front of the update_deque.
-    void clear_update() {
+    int clear_update() {
         if (is_field()) {
             parent_channel.clear_update();
-            return;
+            return 0;
         }
         update_deque.pop_front();
-        pending_update = false;
+        int updates = pending_update;
+        pending_update = 0;
+        return updates;
     }
 
 };
@@ -127,12 +131,13 @@ struct ChannelGroup
     }
 
     inline uint32_t end_channel_group_id(const Channel& channel) const {
-        for (auto i = channel.index; i < channels.size()-1; i++) {
-            if (channels[i].parent_index < channels[i+1].parent_index) {
+        // channel must be a member of the channels vector, therefore size is at least 1
+        for (auto i = channel.index; i < channels.size() - 1; i++) {
+            if (channels[i].parent_index < channels[i + 1].parent_index) {
                 return i;
             }
         }
-        return channels.size() - 1;
+        return uint32_t(channels.size() - 1);
     }
 
     ChannelGroup(const Channel& channel, const std::vector<Channel>& channels) :
@@ -144,7 +149,7 @@ struct ChannelGroup
 
     inline uint32_t value_size() const {
         uint32_t sum = 0;
-        for (auto i = start_index; i < end_index+1; i++) {
+        for (auto i = start_index; i < end_index + 1; i++) {
             sum += channels[i].value.size();
         }
         return sum;
@@ -152,7 +157,7 @@ struct ChannelGroup
 
     inline uint32_t value_size_aligned(std::size_t alignment) const {
         uint32_t full_aligned_size = 0;
-        for (auto i = start_index; i < end_index+1; i++) {
+        for (auto i = start_index; i < end_index + 1; i++) {
             full_aligned_size += (CAChannelData::size + channels[i].value.size());
             auto n = full_aligned_size % alignment;
             if (n > 0) {
@@ -223,6 +228,7 @@ private:
     UDPSender sender;
 
     uint16_t seq_no = 0;
+    uint32_t global_seq_no = 0;
 
     std::deque<std::uint32_t> update_deque{};
     std::vector<Channel> channels;
@@ -329,7 +335,11 @@ void Sender::Impl::send_fragmented_update(Channel* ch)
     while (remaining_frag_size) {
 
         Serializer s(send_buffer);
-        s += Header::size; // skip preset header
+
+        // Update header with current global sequence number
+        s += sizeof(Header::magic);
+        s << ++global_seq_no;
+        s.position(s.data() + Header::size); // position after header
 
         // we must always fit headers in the buffer
         s.ensure(SubmessageHeader::size + CAFragDataMessage::size);
@@ -377,6 +387,8 @@ void Sender::Impl::send_fragmented_updates()
         send_fragmented_update(ch);
         ch->clear_update();
     }
+
+    // NOTE: fragmented updates do not report statistics (number of updates, overrides)
 }
 
 
@@ -385,7 +397,11 @@ void Sender::Impl::send_updates()
     while (has_updates()) {
 
         Serializer s(send_buffer);
-        s += Header::size; // skip preset header
+
+        // Update header with current global sequence number
+        s += sizeof(Header::magic);
+        s << ++global_seq_no;
+        s.position(s.data() + Header::size); // position after header
     
         // we must always fit headers in the buffer
         s.ensure(SubmessageHeader::size + CADataMessage::size);
@@ -398,6 +414,7 @@ void Sender::Impl::send_updates()
         bool process_fragmented = false;
 
         uint16_t update_count = 0;
+        unsigned override_count = 0;
         s << CADataMessage(seq_no++, update_count);
         auto update_count_pos = s.position() - sizeof(update_count);
 
@@ -420,7 +437,10 @@ void Sender::Impl::send_updates()
                     s.pad_align(SubmessageHeader::alignment, 0);
                     update_count++;
                 }
-                ch->clear_update();
+                int updates = ch->clear_update();
+                if (updates > 0) {
+                    override_count += unsigned(updates - 1);
+                }
             } else {
                 break;
             }
@@ -431,7 +451,11 @@ void Sender::Impl::send_updates()
         s.position(update_count_pos);
         s << update_count;
 
-        logger.log(LogLevel::Debug, "Sending %u update(s).", update_count);
+        if (logger.is_loggable(LogLevel::Debug)) {
+            logger.log(LogLevel::Debug, "Sending %u update(s), %u update overrides.", update_count, override_count);
+        } else if (override_count > 0) {
+            logger.log(LogLevel::Config, "%u values overriden.", override_count);
+        }
 
         sender.send(s.data(), bytes_to_send);
 
@@ -460,8 +484,13 @@ void Sender::Impl::mark_heartbeat_updates()
 
     }
 
-    std::size_t percent_connected = (100 * n_connected / channels.size());
-    std::size_t percent_stalled = (100 * n_marked / channels.size());
+    std::size_t percent_connected = 0;
+    std::size_t percent_stalled = 0;
+    if (channels.size() > 0) {
+        percent_connected = (100 * n_connected / channels.size());
+        percent_stalled = (100 * n_marked / channels.size());
+    }
+
     logger.log(LogLevel::Config, "%zu of %zu (%u%%) connected, %zu (%u%%) without updates in the last heartbeat period.", 
         n_connected, channels.size(), percent_connected,
         n_marked, percent_stalled);

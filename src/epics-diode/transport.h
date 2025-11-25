@@ -16,6 +16,8 @@
 #include <epicsStdlib.h>
 #include <epicsString.h>
 
+#include <epics-diode/logger.h>
+
 namespace epics_diode {
 
 constexpr int EPICS_DIODE_DEFAULT_PORT = 5080;

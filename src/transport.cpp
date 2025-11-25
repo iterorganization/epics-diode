@@ -26,6 +26,7 @@ namespace {
 std::string get_socket_error_string() 
 {
     std::array<char, 64> errStr{};
+    // the function always null-terminates the string
     epicsSocketConvertErrnoToString(errStr.begin(), errStr.size());
     return std::string(errStr.begin());
 }

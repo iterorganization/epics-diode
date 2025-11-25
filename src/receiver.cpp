@@ -26,6 +26,9 @@ struct Receiver::Impl {
     Impl(const epics_diode::Config& config, int port, std::string listening_address);
     void run(double runtime, Callback callback);
 
+    // For testing: get sequence number of packet currently being processed
+    uint16_t get_current_seq_no() const { return current_processing_seq_no; }
+
 private:
     Logger logger;
 
@@ -50,10 +53,11 @@ private:
     UDPReceiver initialize_receiver(int port, std::string listening_address, const Config& config);
     std::vector<Channel> create_channels(const Config& config);
 
-    bool validate_order(uint16_t seq_no);
-    bool validate_order(uint16_t seq_no, uint16_t fragment_seq_no);
+    bool validate_fragment_sequence(uint16_t seq_no, uint16_t fragment_seq_no);
     bool validate_sender(uint64_t startup_time);
     ssize_t receive_updates(const Callback& callback);
+    bool process_packet(std::vector<Serializer::value_type>& packet_buffer, ssize_t size, const Callback& callback, const osiSockAddr& fromAddress);
+    bool process_packet_data(uint8_t* packet_data, ssize_t size, const Callback& callback, const osiSockAddr& fromAddress);
     void check_no_updates(Callback callback);
 
     std::size_t config_hash;
@@ -61,13 +65,21 @@ private:
     std::vector<Serializer::value_type> receive_buffer;
     std::vector<Serializer::value_type> fragment_buffer;
     Serializer fragment_serializer;
+    
+    // Buffer swapping for out-of-order packet handling
+    std::vector<Serializer::value_type> held_packet;
+    ssize_t held_bytes = 0;
+    uint32_t held_seq_no = 0;
 
     UDPReceiver receiver;
 
-    uint16_t last_seq_no = (uint16_t)-1;
     uint16_t active_fragment_seq_no = (uint16_t)-1;
     uint16_t last_fragment_seq_no = (uint16_t)-1;
     uint64_t last_startup_time = 0;
+    uint32_t last_global_seq_no = (uint32_t)-1;
+
+    // For testing: tracks sequence number of packet currently being processed
+    uint16_t current_processing_seq_no = 0;
 
     std::vector<Channel> channels;
 };
@@ -80,6 +92,7 @@ Receiver::Impl::Impl(const Config& config, int port, std::string listening_addre
     receive_buffer(MAX_MESSAGE_SIZE),
     fragment_buffer(MAX_CA_DATA_SIZE),
     fragment_serializer(fragment_buffer.data(), 0),
+    held_packet(MAX_MESSAGE_SIZE),
     receiver(initialize_receiver(port, listening_address, config)),
     channels(create_channels(config))
 {
@@ -175,38 +188,16 @@ std::vector<Receiver::Impl::Channel> Receiver::Impl::create_channels(const Confi
     return channels;
 }
 
-bool Receiver::Impl::validate_order(uint16_t seq_no) {
-    uint16_t diff = seq_no - last_seq_no;
 
-    if (diff != 1 && last_seq_no != (uint16_t)-1) {
-        // a bit high logging level, but we want admins to be aware of this
-        logger.log(LogLevel::Info, "Packet sequence anomaly detected, %u -> %u!", last_seq_no, seq_no);
-    }
 
-    last_seq_no = seq_no;
-
-    constexpr uint16_t tolerable_diff = std::numeric_limits<uint16_t>::max() / 2;
-    // not a duplicate (== 0), or tolerable difference (missing sequences)
-    // unsigned wraps are handled correctly
-    return (/*diff >= 0 && */ diff < tolerable_diff);
-}
-
-bool Receiver::Impl::validate_order(uint16_t seq_no, uint16_t fragment_seq_no) {
-
+bool Receiver::Impl::validate_fragment_sequence(uint16_t seq_no, uint16_t fragment_seq_no) {
     // first fragment
     if (fragment_seq_no == 0) {
-        
-        // check seq_no, remember fragment seq_no
-        if (!validate_order(seq_no)) {
-            return false;
-        } else {
-            active_fragment_seq_no = seq_no;
-            last_fragment_seq_no = 0;
-            return true;
-        }
-
+        // Start new fragment sequence
+        active_fragment_seq_no = seq_no;
+        last_fragment_seq_no = 0;
+        return true;
     } else {
-
         // check if the same as currently active fragment
         if (active_fragment_seq_no != seq_no) {
             active_fragment_seq_no = (uint16_t)-1;
@@ -220,7 +211,6 @@ bool Receiver::Impl::validate_order(uint16_t seq_no, uint16_t fragment_seq_no) {
             active_fragment_seq_no = (uint16_t)-1;
             return false;
         }
-
     }
 }
 
@@ -230,8 +220,11 @@ bool Receiver::Impl::validate_sender(uint64_t startup_time) {
         return true;
     } else if (startup_time > last_startup_time) {
         last_startup_time = startup_time;
-        // reset seq_no
-        last_seq_no = (uint16_t)-1;
+        // reset global seq_no
+        last_global_seq_no = (uint32_t)-1;
+        // clear held packet from old sender
+        held_bytes = 0;
+        held_seq_no = 0;
         return true;
     } else {
         // reject older senders
@@ -241,12 +234,108 @@ bool Receiver::Impl::validate_sender(uint64_t startup_time) {
 
 ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
     osiSockAddr fromAddress;
-    auto bytes_received = receiver.receive(receive_buffer.data(), receive_buffer.size(), &fromAddress);
+
+    // Read packet from socket
+    ssize_t bytes_received = receiver.receive(receive_buffer.data(), receive_buffer.size(), &fromAddress);
     if (bytes_received <= 0) {
         return bytes_received;
     }
 
-    Serializer s(receive_buffer.data(), (std::size_t)bytes_received);
+    // Process the received packet
+    process_packet(receive_buffer, bytes_received, callback, fromAddress);
+
+    return bytes_received;
+}
+
+bool Receiver::Impl::process_packet(std::vector<Serializer::value_type>& packet_buffer, ssize_t size, const Callback& callback, const osiSockAddr& fromAddress) {
+    Serializer s(packet_buffer.data(), (std::size_t)size);
+    Header header;
+    s >> header;
+
+    if (!header.validate()) {
+        logger.log(LogLevel::Warning, "Invalid header received from '%s'.",
+                   to_string(fromAddress).c_str());
+        return false;
+    }
+
+    if (header.config_hash != config_hash) {
+        logger.log(LogLevel::Warning, "Configuration mismatch to sender at '%s'.",
+                   to_string(fromAddress).c_str());
+        return false;
+    }
+
+    if (!validate_sender(header.startup_time)) {
+        logger.log(LogLevel::Warning, "Multiple senders detected, rejecting older sender at '%s'.",
+                   to_string(fromAddress).c_str());
+        return false;
+    }
+
+    uint32_t global_seq_no = header.global_seq_no;
+
+    // First packet - initialize and process
+    if (last_global_seq_no == (uint32_t)-1) {
+        last_global_seq_no = global_seq_no;
+        process_packet_data(packet_buffer.data(), size, callback, fromAddress);
+        return true;
+    }
+
+    uint32_t expected = last_global_seq_no + 1;
+
+    // Use signed arithmetic to handle wrap-around at 2^32
+    // When global_seq_no wraps from 0xFFFFFFFF to 0, simple comparison fails:
+    // (0 <= 0xFFFFFFFF) would incorrectly treat 0 as old
+    // Signed difference handles this: (int32_t)(0 - 0xFFFFFFFF) = 1 (positive, newer)
+    if ((int32_t)(global_seq_no - last_global_seq_no) <= 0) {
+        // Packet is old/duplicate - drop it
+        logger.log(LogLevel::Debug, "Dropped old/duplicate packet: seq %u (expected > %u)",
+                  global_seq_no, last_global_seq_no);
+        return false;
+    }
+
+    // In-order packet arrival
+    if (global_seq_no == expected) {
+        process_packet_data(packet_buffer.data(), size, callback, fromAddress);
+        if (held_bytes > 0) {
+            // Process the held packet after the expected one
+            process_packet_data(held_packet.data(), held_bytes, callback, fromAddress);
+            last_global_seq_no = held_seq_no;
+            held_bytes = 0;
+        } else {
+            last_global_seq_no = global_seq_no;
+        }
+        return true;
+    }
+
+    // Out-of-order packet: exactly one ahead and not holding - hold it
+    if (global_seq_no == expected + 1 && held_bytes == 0) {
+        // Swap buffers to avoid copy
+        held_packet.swap(packet_buffer);
+        held_bytes = size;
+        held_seq_no = global_seq_no;
+        return false; // Held, not processed yet
+    }
+
+    // Drop duplicate of held packet
+    if (held_bytes > 0 && global_seq_no == held_seq_no) {
+        logger.log(LogLevel::Debug, "Dropped duplicate of held packet: seq %u", global_seq_no);
+        return false;
+    }
+
+    // Gap detected - process held packet first if present, then current
+    logger.log(LogLevel::Info, "Gap detected: lost %u packet(s) (%u-%u)",
+              global_seq_no - expected, expected, global_seq_no - 1);
+    if (held_bytes > 0) {
+        process_packet_data(held_packet.data(), held_bytes, callback, fromAddress);
+        held_bytes = 0;
+    }
+    process_packet_data(packet_buffer.data(), size, callback, fromAddress);
+    last_global_seq_no = global_seq_no;
+    return true;
+}
+
+bool Receiver::Impl::process_packet_data(uint8_t* packet_data, ssize_t size, const Callback& callback, const osiSockAddr& fromAddress) {
+
+    Serializer s(packet_data, std::size_t(size));
 
 #if 0
     if (logger.is_loggable(LogLevel::Trace)) {
@@ -254,27 +343,11 @@ ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
     }
 #endif
 
+    // Extract global sequence number from header for testing
     if (s.ensure(Header::size)) {
         Header header;
         s >> header;
-
-        if (!header.validate()) {
-            logger.log(LogLevel::Warning, "Invalid header received from '%s'.",
-                        to_string(fromAddress).c_str());
-            return bytes_received;
-        }
-
-        if (header.config_hash != config_hash) {
-            logger.log(LogLevel::Warning, "Configuration mismatch to sender at '%s'.",
-                        to_string(fromAddress).c_str());
-            return bytes_received;
-        }
-
-        if (!validate_sender(header.startup_time)) {
-            logger.log(LogLevel::Warning, "Multiple senders detected, rejecting older sender at '%s'.",
-                        to_string(fromAddress).c_str());
-            return bytes_received;
-        }
+        //logger.log(LogLevel::Debug, "Processing packet with sequence %u", header.global_seq_no);
     }
 
     while (s.ensure(SubmessageHeader::size)) {
@@ -285,7 +358,7 @@ ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
         if ((subheader.flags & SubmessageFlag::LittleEndian) == 0) {
             logger.log(LogLevel::Warning, "Only little endian ordering supported, dropping entire packet from '%s'.",
                         to_string(fromAddress).c_str());
-            return bytes_received;
+            return false;
         }
 
         auto payload_pos = s.position();
@@ -295,7 +368,8 @@ ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
                 CADataMessage data_msg;
                 s >> data_msg;
 
-                if (validate_order(data_msg.seq_no)) {
+                // Global packet ordering is now handled at header level, so process message directly
+                {
                     for (uint16_t i = 0; i < data_msg.channel_count; i++) {
                         if (s.ensure(CAChannelData::size)) {
                             CAChannelData channel_data;
@@ -312,6 +386,8 @@ ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
 
                                 // guarded callback call
                                 try {
+                                    current_processing_seq_no = data_msg.seq_no;
+
                                     uint32_t count = disconnected ? (uint32_t)-1 : channel_data.count;
                                     callback(channel_data.id, channel_data.type, count, s.position());
                                 } catch (std::exception& ex) {
@@ -336,37 +412,46 @@ ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
                 CAFragDataMessage data_msg;
                 s >> data_msg;
 
-                if (validate_order(data_msg.seq_no, data_msg.fragment_seq_no)) {
+                // Global packet ordering is handled at header level, but we still need fragment sequence validation
+                if (validate_fragment_sequence(data_msg.seq_no, data_msg.fragment_seq_no)) {
 
-                    // first fragment, initialize fragment buffer
-                    if (data_msg.fragment_seq_no == 0) {
-                        auto total_value_size = (std::size_t)dbr_size_n(data_msg.type, data_msg.count);  // parasoft-suppress HICPP-1_2_1-i "Avoid conditions that always evaluate to the same value" - dbr_size_n internal check
-                        fragment_buffer.resize(total_value_size);
-                        fragment_serializer = Serializer(fragment_buffer.data(), total_value_size);
+                    // validate channel_id before using it
+                    if (data_msg.channel_id < channels.size()) {
 
-                        logger.log(LogLevel::Debug, "Expecting to receive %zu total bytes of fragments for '%s'.",
-                                    total_value_size, channels[data_msg.channel_id].name.c_str());
-                    }
+                        // first fragment, initialize fragment buffer
+                        if (data_msg.fragment_seq_no == 0) {
+                            auto total_value_size = (std::size_t)dbr_size_n(data_msg.type, data_msg.count);  // parasoft-suppress HICPP-1_2_1-i "Avoid conditions that always evaluate to the same value" - dbr_size_n internal check
+                            fragment_buffer.resize(total_value_size);
+                            fragment_serializer = Serializer(fragment_buffer.data(), total_value_size);
 
-                    // copy fragment data
-                    if (fragment_serializer.remaining() >= data_msg.fragment_size) {
-                        fragment_serializer.write(s.position(), data_msg.fragment_size);
-
-                        logger.log(LogLevel::Trace, "Received fragment %u (%zu bytes remaining).",
-                                    data_msg.fragment_seq_no, fragment_serializer.remaining());
-
-                        // last fragment received
-                        if (fragment_serializer.remaining() == 0) {
-                            // guarded callback call
-                            try {
-                                callback(data_msg.channel_id, data_msg.type, data_msg.count, fragment_buffer.data());
-                            } catch (std::exception& ex) {
-                                logger.log(LogLevel::Error, "Exception escaped out of callback: %s", ex.what());
-                            }
+                            logger.log(LogLevel::Debug, "Expecting to receive %zu total bytes of fragments for '%s'.",
+                                        total_value_size, channels[data_msg.channel_id].name.c_str());
                         }
 
-                    } else {
-                        logger.log(LogLevel::Debug, "Total fragment size out of bounds.");
+                        // copy fragment data
+                        if (fragment_serializer.remaining() >= data_msg.fragment_size) {
+                            fragment_serializer.write(s.position(), data_msg.fragment_size);
+
+                            logger.log(LogLevel::Trace, "Received fragment %u (%zu bytes remaining).",
+                                        data_msg.fragment_seq_no, fragment_serializer.remaining());
+
+                            // last fragment received
+                            if (fragment_serializer.remaining() == 0) {
+                                // update channel metadata
+                                channels[data_msg.channel_id].last_update_time = current_update_time;
+
+                                // guarded callback call
+                                try {
+                                    current_processing_seq_no = data_msg.seq_no;
+                                    callback(data_msg.channel_id, data_msg.type, data_msg.count, fragment_buffer.data());
+                                } catch (std::exception& ex) {
+                                    logger.log(LogLevel::Error, "Exception escaped out of callback: %s", ex.what());
+                                }
+                            }
+
+                        } else {
+                            logger.log(LogLevel::Debug, "Total fragment size out of bounds.");
+                        }
                     }
 
                     // not needed, will be handled below
@@ -389,7 +474,7 @@ ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
         }
     }
 
-    return bytes_received;
+    return true;
 }
 
 
@@ -402,6 +487,10 @@ Receiver::~Receiver() = default;
 
 void Receiver::run(double runtime, Callback callback) {
     impl->run(runtime, std::move(callback));
+}
+
+uint16_t Receiver::get_current_seq_no() const {
+    return impl->get_current_seq_no();
 }
 
 }

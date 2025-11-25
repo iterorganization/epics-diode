@@ -218,10 +218,11 @@ private:
     uint64_t iteration = 0;
     const uint64_t hb_iterations;
 
-    std::vector<Serializer::value_type> send_buffer;  
+    std::vector<Serializer::value_type> send_buffer;
     UDPSender sender;
 
     uint16_t seq_no = 0;
+    uint32_t global_seq_no = 0;
 
     std::deque<std::uint32_t> update_deque{};
     std::vector<Channel> channels;
@@ -449,8 +450,12 @@ void Sender::Impl::send_typedef_updates()
     while (size_t(id) < typeCache.size()) {
 
         Serializer s(send_buffer);
-        s += Header::size; // skip preset header
-    
+
+        // Update header with current global sequence number
+        s += sizeof(Header::magic);
+        s << ++global_seq_no;
+        s.position(s.data() + Header::size); // position after header
+
         // we must always fit headers in the buffer
         s.ensure(SubmessageHeader::size + PVATypeDefMessage::size);
 
@@ -491,8 +496,12 @@ void Sender::Impl::send_updates()
     while (has_updates()) {
 
         Serializer s(send_buffer);
-        s += Header::size; // skip preset header
-    
+
+        // Update header with current global sequence number
+        s += sizeof(Header::magic);
+        s << ++global_seq_no;
+        s.position(s.data() + Header::size); // position after header
+
         // we must always fit headers in the buffer
         s.ensure(SubmessageHeader::size + PVADataMessage::size);
 

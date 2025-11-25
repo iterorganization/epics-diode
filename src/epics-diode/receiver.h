@@ -6,6 +6,8 @@
 #ifndef EPICS_DIODE_RECEIVER_H
 #define EPICS_DIODE_RECEIVER_H
 
+#include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -20,6 +22,9 @@ public:
     Receiver(const epics_diode::Config& config, int port, std::string listening_address);
     ~Receiver();
     void run(double runtime, Callback callback);
+
+    // For testing: get sequence number of packet currently being processed
+    uint16_t get_current_seq_no() const;
 
 private:
     struct Impl;

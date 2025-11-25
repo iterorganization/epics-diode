@@ -16,6 +16,10 @@ testDiode_LIBS += diodeIoc
 testDiode_LIBS += epics-diode
 testDiode_LIBS += $(EPICS_BASE_IOC_LIBS)
 
+PROD += monitor_updates 
+monitor_updates_SRCS += monitor_updates.c
+monitor_updates_LIBS += ca Com
+
 CFG += test_diode.json readOnly.acf
 
 #===========================

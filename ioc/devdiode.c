@@ -276,7 +276,6 @@ int diode_value_update(uint32_t channel_index, uint16_t type, uint32_t count,
 
     // not yet initialized
     if (!diodeLUT) {
-        errlogPrintf("devdiode: not yet initialized\n");
         return -1;
     }
 

@@ -50,7 +50,7 @@ Choosing unidirectional UDP as transport has (therefore) the following implicati
 
 - a sender must resend a last update message of a channel if no other update was sent in ``heartbeat period`` of time,
 - not having received any update from one channel in 2x ``heartbeat period`` turns the channel value invalid (on the receiver side), 
-- a mechanism to detect out-of-order, duplicate, or failed message delivery needs to be implemented (e.g. using message sequence number), 
+- a mechanism to detect out-of-order, duplicate, or failed message delivery needs to be implemented (e.g. using global packet sequence number), 
 - due to the limitation of the maximum UDP packet size messages exceeding this limit need to be fragmented (e.g. for large array values),
 - rate-limited flow control needs to be implemented,
 - consequently keep the amount of data sent to a minimum, i.e. avoid sending channel names and channel metadata 
@@ -138,7 +138,7 @@ Validation includes:
 
 - `EPICS Diode` protocol message identification check, 
 - one-sender check, and
-- checks for out-of-order or duplicate delivery of a message.
+- checks for out-of-order or duplicate delivery of messages, with support for robust packet reordering using global sequence numbers.
 
 Refer to the :doc:`protocol` document for protocol details.
 

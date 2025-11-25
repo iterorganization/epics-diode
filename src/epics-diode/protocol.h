@@ -174,23 +174,21 @@ protected:
 
 struct Header {
     static constexpr std::size_t size = 24;
-    
+
 //    static constexpr std::array<uint8_t, 4> MAGIC = { 0x70u, 0x76u, 0x41u, 0x43u }; // 'pvAC' == pv 'anode-cathode' aka diode
-    static constexpr uint8_t VERSION = 1;
 
     std::array<uint8_t, 4> magic{};
-    uint8_t version = 0;
-    std::array<uint8_t, 3> reserved{};
+    std::uint32_t global_seq_no = 0;  // global packet sequence number (was version + reserved)
     std::uint64_t startup_time = 0;   //  time in milliseconds since the UNIX epoch, little-endian
     std::uint64_t config_hash = 0;    // configuration hash, little-endian
 
     /// Constructs empty (zeroed) header.
     constexpr Header() {}
     
-    /// Constructs valid (with magic and versions) header with given GUID and configuration hash
-    constexpr explicit Header(std::uint64_t startup_time, std::uint64_t config_hash) : 
+    /// Constructs valid header with given startup time, configuration hash, and sequence number
+    constexpr explicit Header(std::uint64_t startup_time, std::uint64_t config_hash, std::uint32_t global_seq_no = 0) :
         magic({ 0x70u, 0x76u, 0x41u, 0x43u }),
-        version(VERSION),
+        global_seq_no(global_seq_no),
         startup_time(startup_time),
         config_hash(config_hash)
     {}
