@@ -147,8 +147,12 @@ struct Channel
     }
 
     bool mark_heartbeat_update() {
-        // always send heartbeats, we need periodic Full updates
-        mark_update(Full);
+        // always send heartbeats, we need periodic Full updates; unless disconnected
+        if (connected) {
+            mark_update(Full);
+        } else {
+            mark_update(Disconnected);
+        }
         updates_since_last_hb = 0;
         return true;
     }

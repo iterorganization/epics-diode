@@ -23,7 +23,7 @@ const char* get_timestamp()
     return timeText;
 }    
 
-#define MAX_CHANNELS 50000
+#define MAX_CHANNELS 100000
 
 static chid channels[MAX_CHANNELS];
 static evid subscriptions[MAX_CHANNELS];
