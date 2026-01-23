@@ -1,7 +1,7 @@
-#!"$(CODAC_ROOT)/apps/epics-diode/bin/testDiode"
+#!/opt/codac/apps/epics-diode/bin/testDiode
 
 ## Set paths
-epicsEnvSet("DIODE_ROOT", "$(CODAC_ROOT)/apps/epics-diode")
+epicsEnvSet("DIODE_ROOT", "/opt/codac/apps/epics-diode")
 
 asSetFilename("$(DIODE_ROOT)/cfg/readOnly.acf")
 
