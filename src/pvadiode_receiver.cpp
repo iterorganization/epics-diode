@@ -156,22 +156,23 @@ int main (int argc, char *argv[])
                 if (!pv) {
                     // instantiate if value is not null (aka disconnected)
                     if (value) {
-                        std::cout << "instantiating: " << name << ": " << value;
+                        //std::cout << "instantiating: " << name << ": " << value;
                         pv = ::pvxs::server::SharedPV::buildReadonly();
                         pv.open(value);
-                        server.addPV("x"+name, pv); // TODO added prefix for easy testing
+                        server.addPV(name, pv);
+                        //server.addPV("x"+name, pv); // added prefix for easy testing
                     }
                 } else {
                     if (value) {
                         if (pv.isOpen()) {
-                            std::cout << "update: " << name << ": " << value;
+                            //std::cout << "update: " << name << ": " << value;
                             pv.post(value);    
                         } else {
-                            std::cout << "reopen: " << name << ": " << value;
+                            //std::cout << "reopen: " << name << ": " << value;
                             pv.open(value);
                         }
                     } else {
-                        std::cout << "closing: " << name << std::endl;
+                        //std::cout << "closing: " << name << std::endl;
                         pv.close();
                     }
                 }

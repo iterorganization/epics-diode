@@ -316,15 +316,15 @@ ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
                                         // and there was no lost partial update
                                         uint16_t expected_seq_no = channel.last_update_seqno + 1;
                                         if (channel.last_value && expected_seq_no == channel_data.update_seq_no) {
-                                            std::cout << "partial update" << std::endl;
+                                            //std::cout << "partial update" << std::endl;
                                         } else {
                                             // drop until we get full update with id
-                                            std::cout << "partial update, dropping" << std::endl;
+                                            //std::cout << "partial update, dropping" << std::endl;
                                             drop_update = true;
                                         }
                                     } else {
                                         // full update
-                                        std::cout << "full update w/ type id: " << channel_data.type_id << std::endl;
+                                        //std::cout << "full update w/ type id: " << channel_data.type_id << std::endl;
                                         
                                         if (channel_data.type_id < typeCache.size() && typeCache[channel_data.type_id]) {
                                             if (!channel.last_value) {
@@ -335,7 +335,7 @@ ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
                                         } else {
                                             // unknown type ID, drop
                                             // TODO log
-                                            std::cout << "unknown type ID: " << channel_data.type_id << std::endl;
+                                            //std::cout << "unknown type ID: " << channel_data.type_id << std::endl;
                                             drop_update = true;
                                         }
                                     }
@@ -348,7 +348,7 @@ ssize_t Receiver::Impl::receive_updates(const Callback& callback) {
                                 } else {
                                     // invalidate value to notify disconnection
                                     channel.last_value = ::pvxs::Value();
-                                    std::cout << "disconnected" << std::endl;
+                                    //std::cout << "disconnected" << std::endl;
                                 }
 
                                 if (!drop_update) {
