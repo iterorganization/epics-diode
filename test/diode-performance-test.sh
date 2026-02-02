@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# NOTE: This script contains CODAC specific tools (e.g. softIOC).
+
 function usage {
 cat <<EOM
 usage: $0 [-hl] [-p poz_ip] [-x xpoz_ip] [-w hw_address] [-u min_update_period] [-f polled_fields_update_period] [-b heartbeat_period] [-m rate_limit] [-n max_records_per_poz_ioc] [-r records] [-s samples] [-t time] [-a max_camonitor_args] [-c monitor_update_tool_pvs] [-d bash_terminal_camonitor_pvs]
